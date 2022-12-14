@@ -150,6 +150,9 @@ export class QueryTable extends SQLSource implements DataSource
 
 	public addBindValue(bindvalue:BindValue) : void
 	{
+		if (this.bindings$ == null)
+			this.bindings$ = [];
+			
 		this.bindings$.push(bindvalue);
 	}
 
