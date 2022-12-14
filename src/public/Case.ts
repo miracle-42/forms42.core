@@ -10,11 +10,10 @@
  * accompanied this code).
  */
 
-export enum DataType
+export enum Case
 {
-	date,
-	string,
-	integer,
-	decimal,
-	datetime
+	mixed,
+	lower,
+	upper,
+	initcap
 }

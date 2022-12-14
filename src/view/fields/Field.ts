@@ -15,11 +15,13 @@ import { Form } from "../Form.js";
 import { Block } from "../Block.js";
 import { EventStack } from "./EventStack.js";
 import { BrowserEvent} from "../BrowserEvent.js";
+import { Input } from "./implementations/Input.js";
 import { FieldInstance } from "./FieldInstance.js";
 import { Form as Interface } from "../../public/Form.js";
 import { Block as ModelBlock } from "../../model/Block.js";
+import { FormBacking } from "../../application/FormBacking.js";
 import { KeyMap, KeyMapping } from "../../control/events/KeyMap.js";
-import { FormEvent, FormEvents } from "../../control/events/FormEvents.js";
+import { FlightRecorder } from "../../application/FlightRecorder.js";
 import { MouseMap, MouseMapParser} from "../../control/events/MouseMap.js";
 
 
@@ -31,21 +33,18 @@ export class Field
 	private block$:Block = null;
 	private valid$:boolean = true;
 	private dirty$:boolean = false;
+	private validated$:boolean = true;
 	private instance$:FieldInstance = null;
 	private instances$:FieldInstance[] = [];
 
 	public static create(form:Interface, block:string, field:string, rownum:number) : Field
 	{
-		let frm:Form = Form.getForm(form);
-		if (frm == null) return(null);
+		let frm:Form = FormBacking.getViewForm(form,true);
 
 		let blk:Block = frm.getBlock(block);
 
 		if (blk == null)
-		{
-			blk = new Block(form,block);
-			frm.addBlock(blk);
-		}
+			blk = new Block(frm,block);
 
 		if (rownum < 0) rownum = -1;
 		let row:Row = blk.getRow(rownum);
@@ -99,6 +98,16 @@ export class Field
 		this.dirty$ = flag;
 	}
 
+	public get validated() : boolean
+	{
+		return(this.validated$);
+	}
+
+	public set validated(flag:boolean)
+	{
+		this.validated$ = flag;
+	}
+
 	public get mdlblock() : ModelBlock
 	{
 		return(this.block$.model);
@@ -129,6 +138,14 @@ export class Field
 	public set valid(flag:boolean)
 	{
 		this.valid$ = flag;
+	}
+
+	public clear() : void
+	{
+		this.valid = true;
+		this.dirty = false;
+		this.value$ = null;
+		this.instances$.forEach((inst) => {inst.clear()});
 	}
 
 	public addInstance(instance:FieldInstance) : void
@@ -206,12 +223,9 @@ export class Field
 
 	public getValue() : any
 	{
-		if (!this.dirty) return(this.value$);
-
 		let inst:FieldInstance = this.instance$;
 		if (inst == null) inst = this.instances$[0];
-
-		return(inst.getIntermediateValue());
+		return(inst.getValue());
 	}
 
 	public async handleEvent(inst:FieldInstance, brwevent:BrowserEvent) : Promise<void>
@@ -222,6 +236,7 @@ export class Field
 	public async performEvent(inst:FieldInstance, brwevent:BrowserEvent) : Promise<void>
 	{
 		let key:KeyMap = null;
+		let success:boolean = null;
 
 		if (brwevent.type == "focus")
 		{
@@ -229,7 +244,10 @@ export class Field
 			this.value$ = inst.getValue();
 
 			if (inst.ignore != "focus")
-				await this.block.form.enter(inst);
+				success = await this.block.form.enter(inst);
+
+			if (!success)
+				FlightRecorder.add("@field: focus "+inst+" ignore: "+inst.ignore+" failed");
 
 			inst.ignore = null;
 			return;
@@ -237,57 +255,33 @@ export class Field
 
 		if (brwevent.type == "blur")
 		{
-			if (this.dirty)
-			{
-				let value:string = inst.getIntermediateValue();
-
-				this.distribute(inst,value,this.dirty);
-				this.block.distribute(this,value,this.dirty);
-			}
-
 			if (inst.ignore != "blur")
-				await this.block.form.leave(inst);
+				success = await this.block.form.leave(inst);
+
+			if (!success)
+				FlightRecorder.add("@field: blur "+inst+" failed");
+
+			if (!this.valid$)
+			{
+				if (inst.getValue() == this.value$)
+					inst.valid = false;
+			}
 
 			inst.ignore = null;
 			return;
 		}
 
-		if (brwevent.accept)
-		{
-			if (this.dirty)
-			{
-				this.dirty = false;
-				this.value$ = inst.getValue();
-
-				this.distribute(inst,this.value$,this.dirty);
-				this.block.distribute(this,this.value$,this.dirty);
-
-				if (!await this.validate(inst))
-					return;
-			}
-
-			if (!await this.block.validate())
-				return;
-
-			key = KeyMapping.parseBrowserEvent(brwevent);
-			await this.block.onKey(inst,key);
-
-			return;
-		}
-
 		if (brwevent.type == "change")
 		{
-			this.dirty = false;
-			let value:any = inst.getValue();
-			if (value == this.value$) return;
-
 			this.row.invalidate();
-			this.value$ = inst.getValue();
+			success = await this.validate(inst);
 
 			this.distribute(inst,this.value$,this.dirty);
 			this.block.distribute(this,this.value$,this.dirty);
 
-			await this.validate(inst);
+			if (!success)
+				FlightRecorder.add("@field: change "+inst+" failed");
+
 			return;
 		}
 
@@ -295,64 +289,49 @@ export class Field
 		{
 			let value:string = inst.getIntermediateValue();
 
+			this.dirty = true;
 			inst.valid = true;
 			this.row.invalidate();
-			this.distribute(inst,value,true);
-			this.block.distribute(this,value,true);
 
-			await this.block.onTyping(inst);
+			this.validated = false;
+			this.distribute(inst,value,this.dirty);
+			this.block.distribute(this,value,this.dirty);
+
+			success = await this.block.onEdit(inst);
+
+			if (!success)
+				FlightRecorder.add("@field: onEdit "+inst+" failed");
+
 			return;
 		}
 
-		if (brwevent.type.startsWith("key") && !brwevent.navigation)
-		{
-			key = KeyMapping.parseBrowserEvent(brwevent);
+		if (brwevent.onScrollUp) {key = KeyMap.nextrecord; inst = this.block.form.instance;}
+		if (brwevent.onScrollDown) {key = KeyMap.prevrecord; inst = this.block.form.instance;}
 
+		if (brwevent.type?.startsWith("key") || key != null)
+		{
 			if (brwevent.undo) key = KeyMap.undo;
 			else if (brwevent.copy) key = KeyMap.copy;
 			else if (brwevent.paste) key = KeyMap.paste;
 
-			await this.block.onKey(inst,key);
-			return;
-	}
-
-		if (brwevent.onScrollUp) {brwevent.navigation = true; key = KeyMap.nextrecord;}
-		if (brwevent.onScrollDown) {brwevent.navigation = true; key = KeyMap.prevrecord;}
-
-		if (brwevent.navigation)
-		{
 			if (key == null)
 				key = KeyMapping.parseBrowserEvent(brwevent);
 
-			if (brwevent.onScrollUp || brwevent.onScrollDown)
-				inst = this.block.form.instance;
+			success = await this.block.form.keyhandler(key,inst);
 
-			if (key != null && inst != null)
-			{
-				if (this.dirty)
-				{
-					this.dirty = false;
-					this.value$ = inst.getValue();
-					this.distribute(inst,this.value$,this.dirty);
-					this.block.distribute(this,this.value$,this.dirty);
-
-					if (!await this.validate(inst))
-						return;
-				}
-
-				await this.block.navigate(key,inst);
-			}
+			if (!success)
+				FlightRecorder.add("@field: keyhandler "+inst+" failed");
 
 			return;
 		}
 
 		if (brwevent.isMouseEvent)
 		{
-			if (brwevent.event.type.includes("click") || brwevent.type == "contextmenu")
-			{
-				let mevent:MouseMap = MouseMapParser.parseBrowserEvent(brwevent);
-				await this.block.onMouse(inst,mevent);
-			}
+			let mevent:MouseMap = MouseMapParser.parseBrowserEvent(brwevent);
+			success = await this.block.form.mousehandler(mevent,inst);
+
+			if (!success)
+				FlightRecorder.add("@field: mouseevent "+inst+" failed");
 
 			return;
 		}
@@ -361,7 +340,7 @@ export class Field
 	public distribute(inst:FieldInstance, value:any, dirty:boolean) : void
 	{
 		this.dirty = dirty;
-		this.value$ = value;
+ 		this.value$ = value;
 
 		this.instances$.forEach((fi) =>
 		{
@@ -375,18 +354,49 @@ export class Field
 
 	public async validate(inst:FieldInstance) : Promise<boolean>
 	{
-		if (!await this.block.validate(inst,this.value$))
+		let value:any = inst.getValue();
+
+		if (inst.implementation instanceof Input)
+			value = inst.implementation.bonusstuff(value);
+
+		if (value instanceof Date && this.value$ instanceof Date)
 		{
-			inst.focus();
+			if (value.getTime() != this.value$.getTime())
+				this.dirty = true;
+		}
+		else
+		{
+			if (value != this.value$)
+				this.dirty = true;
+		}
+
+		if (!this.dirty)
+			return(true);
+
+
+		if (!await this.block.validateField(inst,inst.getValue()))
+		{
 			inst.valid = false;
 			this.valid = false;
+
+			FlightRecorder.debug("@field: validateField: "+inst+" failed");
 			return(false);
 		}
 		else
 		{
 			inst.valid = true;
 			this.valid = true;
+			this.dirty = false;
+			this.value$ = value;
+			this.validated = true;
+
+			await this.block.postValidateField(inst);
 			return(true);
 		}
+	}
+
+	public toString() : string
+	{
+		return(this.name+"["+this.row.rownum+"] value: "+this.value$+" dirty: "+this.dirty+" valid: "+this.valid$);
 	}
 }

@@ -26,18 +26,18 @@ export class EventListener
 		{
 			this.method = method;
 
-			if (form[this.method] == null)
-				throw "@EventListener: method '"+this.method+"' does not exist on form '"+form.constructor.name+"'";
+			if (clazz[this.method] == null)
+				throw "@EventListener: method '"+this.method+"' does not exist on class '"+clazz.constructor.name+"'";
 		}
 		else
 		{
 			this.method = method.name;
 
-			if (form[this.method] == null)
-				throw "@EventListener: method '"+this.method+"' does not exist on form '"+form.constructor.name+"'";
+			if (clazz[this.method] == null)
+				throw "@EventListener: method '"+this.method+"' does not exist on class '"+clazz.constructor.name+"'";
 
-			if (form[this.method] != method)
-				throw "@EventListener: method '"+this.method+"' does not match method defined on form '"+form.constructor.name+"'";
+			if (clazz[this.method] != method)
+				throw "@EventListener: method '"+this.method+"' does not match method defined on class '"+clazz.constructor.name+"'";
 		}
 
 		Logger.log(Type.eventlisteners,"eventlistener : "+this.toString());

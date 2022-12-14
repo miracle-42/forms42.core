@@ -10,52 +10,37 @@
  * accompanied this code).
  */
 
-import { Form } from './Form.js';
-import { Status } from '../view/Row.js';
 import { Class } from '../types/Class.js';
+import { Alert } from '../application/Alert.js';
+import { DataType } from '../view/fields/DataType.js';
 import { DataMapper } from '../view/fields/DataMapper.js';
-import { FieldInstance } from '../view/fields/FieldInstance.js';
 import { BasicProperties } from '../view/fields/BasicProperties.js';
 import { FieldFeatureFactory } from '../view/FieldFeatureFactory.js';
 
-
 export class FieldProperties extends BasicProperties
 {
-	private status:Status = null;
-	private inst$:FieldInstance = null;
-
-	constructor(inst$:FieldInstance, deflt:boolean, status:Status)
+	constructor(properties:BasicProperties)
 	{
 		super();
-		this.inst$ = inst$;
-		this.status = status;
-		FieldFeatureFactory.initialize(this,inst$,deflt,status);
+
+		if (properties != null)
+			FieldFeatureFactory.copyBasic(properties,this);
 	}
 
-	public get name() : string
+	public clone() : FieldProperties
 	{
-		return(this.inst$.name);
-	}
-
-	public get block() : string
-	{
-		return(this.inst$.block);
-	}
-
-	public get row() : number
-	{
-		if (this.inst$.row < 0) return(null);
-		else 					return(this.inst$.row);
-	}
-
-	public get form() : Form
-	{
-		return(this.inst$.form);
+		return(new FieldProperties(this));
 	}
 
 	public setTag(tag:string) : FieldProperties
 	{
 		this.tag = tag;
+		return(this);
+	}
+
+	public setType(_type:DataType) : FieldProperties
+	{
+		Alert.fatal("Data type cannot be changed","Properties");
 		return(this);
 	}
 
@@ -71,6 +56,12 @@ export class FieldProperties extends BasicProperties
 		return(this);
 	}
 
+	public setDerived(_flag:boolean) : FieldProperties
+	{
+		Alert.fatal("Derived cannot be changed","Properties");
+		return(this);
+	}
+
 	public setRequired(flag:boolean) : FieldProperties
 	{
 		this.required = flag;
@@ -83,15 +74,15 @@ export class FieldProperties extends BasicProperties
 		return(this);
 	}
 
-	public setStyles(styles:string) : FieldProperties
-	{
-		super.setStyles(styles);
-		return(this);
-	}
-
 	public setStyle(style:string, value:string) : FieldProperties
 	{
 		super.setStyle(style,value);
+		return(this);
+	}
+
+	public setStyles(styles:string) : FieldProperties
+	{
+		this.styles = styles;
 		return(this);
 	}
 
@@ -101,15 +92,9 @@ export class FieldProperties extends BasicProperties
 		return(this);
 	}
 
-	public setClass(clazz:any) : FieldProperties
+	public setClass(clazz:string) : FieldProperties
 	{
 		super.setClass(clazz);
-		return(this);
-	}
-
-	public removeClass(clazz:any) : FieldProperties
-	{
-		super.removeClass(clazz);
 		return(this);
 	}
 
@@ -119,9 +104,21 @@ export class FieldProperties extends BasicProperties
 		return(this);
 	}
 
-	public setAttribute(attr:string, value:any) : FieldProperties
+	public removeClass(clazz:any) : FieldProperties
+	{
+		super.removeClass(clazz);
+		return(this);
+	}
+
+	public setAttribute(attr:string, value?:any) : FieldProperties
 	{
 		super.setAttribute(attr,value);
+		return(this);
+	}
+
+	public setAttributes(attrs:Map<string,string>) : FieldProperties
+	{
+		super.setAttributes(attrs);
 		return(this);
 	}
 
@@ -137,7 +134,7 @@ export class FieldProperties extends BasicProperties
 		return(this);
 	}
 
-	public setValidValues(values: Set<string> | Map<string,string>) : FieldProperties
+    public setValidValues(values: string[] | Set<string> | Map<string,string>) : FieldProperties
 	{
 		this.validValues = values;
 		return(this);
@@ -147,10 +144,5 @@ export class FieldProperties extends BasicProperties
 	{
 		super.setMapper(mapper);
 		return(this);
-	}
-
-	public apply() : void
-	{
-		FieldFeatureFactory.merge(this,this.inst$,this.status == null);
 	}
 }

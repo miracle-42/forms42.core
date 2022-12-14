@@ -10,9 +10,23 @@
  * accompanied this code).
  */
 
+import { Record } from "../Record.js";
+import { BindValue } from "../../database/BindValue.js";
 
 export interface Filter
 {
-	column:string;
-	values() : any;
+	clear() : void;
+	asSQL() : string;
+	clone() : Filter;
+
+	constraint?:any|any[];
+
+	getBindValue() : BindValue;
+	getBindValues() : BindValue[];
+
+	getBindValueName() : string;
+	setBindValueName(name:string) : Filter;
+
+	setConstraint(value:any|any[]) : Filter;
+	evaluate(record:Record) : Promise<boolean>;
 }

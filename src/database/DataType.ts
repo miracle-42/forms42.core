@@ -10,13 +10,30 @@
  * accompanied this code).
  */
 
-export function isFormField(object: any): object is FormField
+export enum DataType
 {
-    return('editable' in object);
-}
+	int,
+	integer,
+	smallint,
 
+	long,
 
-export interface FormField
-{
-	editable:boolean;
+	float,
+	double,
+
+	number,
+	numeric,
+	decimal,
+
+	date,
+	datetime,
+	timestamp,
+
+	string,
+	varchar,
+	varchar2,
+
+	text,
+
+	boolean
 }

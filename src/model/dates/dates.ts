@@ -42,6 +42,17 @@ export enum DatePart
 	Second
 }
 
+export enum WeekDays
+{
+	Sun,
+	Mon,
+	Tue,
+	Wed,
+	Thu,
+	Fri,
+	Sat
+}
+
 export class dates
 {
 	public static validate() : boolean
@@ -68,6 +79,16 @@ export class dates
 
         return(utils.parse(datestr,withtime,format));
     }
+
+	public static getDays(start:WeekDays): Array<String>
+	{
+		let names:string[] = [];
+
+		for (let i = 0; i < 7; i++)
+			names.push(WeekDays[(i+start)%7])
+
+		return(names);
+	}
 
     public static format(date:Date, format?:string) : string
     {

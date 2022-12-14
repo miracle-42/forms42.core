@@ -10,6 +10,7 @@
  * accompanied this code).
  */
 
+import { DataType } from "../DataType.js";
 import { DataMapper, Tier } from "../DataMapper.js";
 import { BrowserEvent } from "../../BrowserEvent.js";
 import { FieldProperties } from "../FieldProperties.js";
@@ -26,6 +27,16 @@ export class Textarea implements FieldImplementation, EventListenerObject
 
 	private element:HTMLTextAreaElement = null;
     private event:BrowserEvent = BrowserEvent.get();
+
+	public get datatype() : DataType
+	{
+		return(DataType.string);
+	}
+
+	public set datatype(_type:DataType)
+	{
+		null;
+	}
 
 	public create(eventhandler:FieldEventHandler, _tag:string) : HTMLElement
 	{

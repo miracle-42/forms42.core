@@ -10,8 +10,18 @@
  * accompanied this code).
  */
 
-export enum Hook
+import { Logger, Type } from '../Logger.js';
+import { Form } from '../../public/Form.js';
+import { FormMetaData } from '../FormMetaData.js';
+
+export const block = (block:string) =>
 {
-	OnFocus,
-	AfterCreate
+	function define(form:Form, attr:string)
+	{
+		block = block?.toLowerCase();
+		FormMetaData.get(form,true).blockattrs.set(attr,block);
+		Logger.log(Type.metadata,"Setting variable "+attr+" on form: "+form.name+" to block: "+block);
+	}
+
+	return(define);
 }

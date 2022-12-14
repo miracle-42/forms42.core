@@ -11,19 +11,21 @@
  */
 
 import { Tag } from "./Tag.js";
-import { Form } from "../../view/Form.js";
+import { Form } from "../../public/Form.js";
+import { Properties } from "../Properties.js";
+import { FormBacking } from "../FormBacking.js";
 
-export class Indicator implements Tag
+export class RowIndicator implements Tag
 {
 	public row:number = -1;
-	public block:string = null;
+	public binding:string = null;
 	public element:HTMLElement = null;
 
-    public parse(component:any, tag:HTMLElement, attr:string) : HTMLElement
-    {
+	public parse(component:any, tag:HTMLElement, attr:string) : HTMLElement
+	{
 		let row:string = tag.getAttribute("row");
-		let block:string = tag.getAttribute(attr);
-		if (attr != "block") tag.removeAttribute(attr);
+		let binding:string = tag.getAttribute(attr);
+		if (attr != Properties.BindAttr) tag.removeAttribute(attr);
 
 		if (row == null)
 			throw "@Indicator: row attribute missing";
@@ -31,11 +33,14 @@ export class Indicator implements Tag
 		if (isNaN(+row))
 			throw "@Indicator: row attribute is not a number";
 
-		this.row = +row;
-		this.block = block;
-		this.element = tag;
+		if (!(component instanceof Form))
+			throw "@Indicator: Indicators cannot be placed on non-forms "+component.constructor.name;
 
-		Form.getForm(component)?.addIndicator(this);
+		this.row = +row;
+		this.element = tag;
+		this.binding = binding;
+
+		FormBacking.getViewForm(component,true)?.addIndicator(this);
 		return(tag);
-    }
+	}
 }

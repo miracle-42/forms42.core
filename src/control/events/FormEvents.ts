@@ -14,13 +14,13 @@ import { KeyMap } from "./KeyMap.js";
 import { MouseMap } from "./MouseMap.js";
 import { EventType } from "./EventType.js";
 import { Form } from "../../public/Form.js";
-import { Block } from "../../public/Block.js";
-import { Field } from "../../public/Field.js";
 import { EventFilter } from "./EventFilter.js";
 import { Alert } from "../../application/Alert.js";
 import { EventListener } from "./EventListener.js";
-import { Form as ModelForm } from "../../model/Form.js";
+import { FormEvent as Interface } from "./FormEvent.js";
 import { Logger, Type } from "../../application/Logger.js";
+import { ApplicationHandler } from "./ApplicationHandler.js";
+import { FlightRecorder } from "../../application/FlightRecorder.js";
 import { FieldInstance as ViewFieldInstance } from "../../view/fields/FieldInstance.js";
 
 export class KeyEventSource
@@ -28,16 +28,21 @@ export class KeyEventSource
 	constructor(public key:KeyMap, public field:string, public block:string, public record:number, public form:Form) {}
 }
 
-export class FormEvent
+export class FormEvent implements Interface
 {
+	public static AppEvent(type:EventType) : FormEvent
+	{
+		return(new FormEvent(type,null));
+	}
+
 	public static FormEvent(type:EventType, form:Form) : FormEvent
 	{
 		return(new FormEvent(type,form));
 	}
 
-	public static BlockEvent(type:EventType, form:Form, block:string, inst?:ViewFieldInstance) : FormEvent
+	public static BlockEvent(type:EventType, form:Form, block:string, inst?:ViewFieldInstance|string) : FormEvent
 	{
-		return(new FormEvent(type,form,inst,inst != null ? inst.block : block));
+		return(new FormEvent(type,form,inst,block));
 	}
 
 	public static FieldEvent(type:EventType, inst:ViewFieldInstance) : FormEvent
@@ -55,21 +60,15 @@ export class FormEvent
 		return(new FormEvent(EventType.Mouse,form,inst,inst != null ? inst.block : block,null,event));
 	}
 
-	private block$:Block = null;
-	private field$:Field = null;
-
-	private bevaluated:boolean = false;
-	private fevaluated:boolean = false;
-
 	private constructor
 		(
 			private type$:EventType,
-			private form$:Form, private inst?:ViewFieldInstance,
-			private blockname$?:string, private key$?:KeyMap,private mevent$?:MouseMap
+			private form$:Form, private inst?:ViewFieldInstance|string,
+			private block$?:string, private key$?:KeyMap,private mevent$?:MouseMap
 		)
 	{
-		if (inst != null)
-			this.blockname$ = inst.block;
+		if (inst instanceof ViewFieldInstance)
+			this.block$ = inst.block;
 	}
 
 	public get type() : EventType
@@ -82,30 +81,9 @@ export class FormEvent
 		return(this.form$);
 	}
 
-	public get field() : Field
+	public get block() : string
 	{
-		if (this.fevaluated) return(this.field$);
-
-		if (this.inst != null)
-			this.field$ = new Field(this.inst);
-
-		this.fevaluated = true;
-		return(this.field$);
-	}
-
-	public get block() : Block
-	{
-		if (this.bevaluated) return(this.block$);
-
-		this.bevaluated = true;
-		this.block$ = ModelForm.getForm(this.form$)?.getBlock(this.blockname$)?.interface;
-
 		return(this.block$);
-	}
-
-	public get blockname() : string
-	{
-		return(this.blockname$);
 	}
 
 	public get key() : KeyMap
@@ -113,9 +91,15 @@ export class FormEvent
 		return(this.key$);
 	}
 
-	public get fieldname() : string
+	public get field() : string
 	{
-		return(this.inst?.name);
+		if (typeof this.inst === "string")
+			return(this.inst);
+
+		if (this.inst instanceof ViewFieldInstance)
+			return(this.inst?.name);
+
+		return(null);
 	}
 
 	public get mouse() : MouseMap
@@ -127,11 +111,11 @@ export class FormEvent
 	{
 		let str:string = "";
 
-		str += "form: "+this.form$?.constructor.name;
+		str += "form: "+this.form$?.name;
 		if (this.type != null) str += ", type: " + EventType[this.type];
 
-		if (this.blockname != null) str += ", block: "+this.blockname;
-		if (this.fieldname != null) str += ", field: "+this.fieldname;
+		if (this.block != null) str += ", block: "+this.block;
+		if (this.field != null) str += ", field: "+this.field;
 
 		if (this.key != null) str += ", key: "+this.key.toString();
 		if (this.mouse != null) str += ", mouse: "+MouseMap[this.mouse];
@@ -139,7 +123,6 @@ export class FormEvent
 		return(str);
 	}
 }
-
 
 export class FormEvents
 {
@@ -186,6 +169,9 @@ export class FormEvents
 				if (lsnr.filter.block != null) ltype = 2;
 				if (lsnr.filter.field != null) ltype = 3;
 
+				if (ltype == 0 && lsnr.filter.mouse == MouseMap.contextmenu)
+					ApplicationHandler.addContextListener();
+
 				switch(ltype)
 				{
 					case 0: FormEvents.add(lsnr.filter.type,lsnr,FormEvents.applisteners); break;
@@ -203,6 +189,40 @@ export class FormEvents
 		return(id);
 	}
 
+	public static getListener(id:object) : EventListener
+	{
+		let map:Map<EventType,EventListener[]> = null;
+
+		for (let i = 0; i < FormEvents.listeners.length; i++)
+		{
+			let lsnr:EventListener = FormEvents.listeners[i];
+			if (lsnr.id == id) return(lsnr);
+		}
+
+		for (let m = 0; m < 4; m++)
+		{
+			switch(m)
+			{
+				case 0: map = FormEvents.fldlisteners; break;
+				case 1: map = FormEvents.blklisteners; break;
+				case 2: map = FormEvents.frmlisteners; break;
+				case 3: map = FormEvents.applisteners; break;
+			}
+
+			for(let key of map.keys())
+			{
+				let listeners:EventListener[] = map.get(key);
+
+				for (let i = 0; listeners != null &&  i < listeners.length; i++)
+				{
+					if (listeners[i].id == id)
+						return(listeners[i]);
+				}
+			}
+		}
+
+		return(null);
+	}
 
 	public static removeListener(id:object) : void
 	{
@@ -214,7 +234,7 @@ export class FormEvents
 
 			if (lsnr.id == id)
 			{
-				FormEvents.listeners = FormEvents.listeners.splice(i,1)
+				FormEvents.listeners.splice(i,1)
 				break;
 			}
 		}
@@ -237,7 +257,7 @@ export class FormEvents
 				{
 					if (listeners[i].id == id)
 					{
-						listeners = listeners.splice(i,1);
+						listeners.splice(i,1);
 						map.set(key,listeners);
 
 						if (listeners.length == 0)
@@ -249,7 +269,6 @@ export class FormEvents
 			}
 		}
 	}
-
 
 	public static async raise(event:FormEvent) : Promise<boolean>
 	{
@@ -397,24 +416,43 @@ export class FormEvents
 		// Make sure event.key not only matches, but is identical
 
 		if (swap) event["key$"] = lkey;
-		let response:Promise<boolean> = lsnr.clazz[lsnr.method](event);
+		let response:Promise<boolean> = null;
+
+		try
+		{
+			response = lsnr.clazz[lsnr.method](event);
+		}
+		catch (error)
+		{
+			Alert.fatal(lsnr.clazz.constructor.name+"."+lsnr.method+" returned "+error,"EventListener");
+			if (swap) event["key$"] = ekey;
+			return(false);
+		}
 
 		if (response instanceof Promise)
 		{
-			await response.then((value) =>
+			try
 			{
-				if (typeof value !== "boolean")
+				await response.then((value) =>
 				{
-					Alert.fatal("@FormEvents: EventListner '"+lsnr+"' did not return Promise<boolean>, but '"+value+"'","EventListener");
-					value = true;
-				}
+					if (typeof value !== "boolean")
+					{
+						Alert.fatal("@FormEvents: EventListner '"+lsnr+"' did not return Promise<boolean>, but '"+value+"'","EventListener");
+						value = true;
+					}
 
-				cont = value;
-			});
+					cont = value;
+				});
+			}
+			catch(error)
+			{
+				Alert.fatal(lsnr.clazz.constructor.name+"."+lsnr.method+" returned "+error,"EventListener");
+				cont = false;
+			}
 		}
 		else
 		{
-			if (response != null && typeof response !== "boolean")
+			if (response == null || typeof response !== "boolean")
 			{
 				Alert.fatal("@FormEvents: EventListner '"+lsnr+"' did not return boolean, but '"+response+"'","EventListener");
 				cont = true;
@@ -425,6 +463,8 @@ export class FormEvents
 		}
 
 		if (swap) event["key$"] = ekey;
+		if (!cont) FlightRecorder.add("@formevent: "+lsnr.clazz+" "+lsnr.method+" "+event+" returned false");
+
 		return(cont);
 	}
 
@@ -434,13 +474,13 @@ export class FormEvents
 		if (lsnr.form != null && lsnr.form != event.form)
 			return(false);
 
-		Logger.log(Type.eventlisteners," match: "+EventType[event.type]+" "+lsnr.form.constructor.name+" event: "+event.form.constructor.name);
+		Logger.log(Type.eventlisteners," match: "+EventType[event.type]+" "+lsnr.clazz.constructor.name);
 
 		if (lsnr.filter != null)
 		{
 			if (lsnr.filter.mouse != null && lsnr.filter.mouse != event.mouse) return(false);
-			if (lsnr.filter.block != null && lsnr.filter.block != event.blockname) return(false);
-			if (lsnr.filter.field != null && lsnr.filter.field != event.fieldname) return(false);
+			if (lsnr.filter.block != null && lsnr.filter.block != event.block) return(false);
+			if (lsnr.filter.field != null && lsnr.filter.field != event.field) return(false);
 			if (lsnr.filter.key != null && lsnr.filter.key.signature != event.key?.signature) return(false);
 		}
 

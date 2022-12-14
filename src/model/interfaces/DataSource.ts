@@ -12,27 +12,33 @@
 
 import { Filter } from './Filter.js';
 import { Record } from '../Record.js';
+import { FilterStructure } from '../FilterStructure.js';
 
 export interface DataSource
 {
+	name:string;
+	sorting:string;
+	columns:string[];
 	arrayfecth:number;
 
-	queryable:boolean;
-	insertable:boolean;
-	updateable:boolean;
-	deleteable:boolean;
+	rowlocking:boolean;
+	queryallowed:boolean;
+	insertallowed:boolean;
+	updateallowed:boolean;
+	deleteallowed:boolean;
 
-	getFilters() : Filter[];
-	addFilter(filter:Filter) : void;
-	setFilters(filters:Filter[]) : void;
-
-	closeCursor() : void;
-	post() : Promise<boolean>;
-	query() : Promise<boolean>;
+	clone() : DataSource;
+	undo() : Promise<Record[]>;
 	fetch() : Promise<Record[]>;
-	refresh(record:Record) : Promise<void>;
+	flush() : Promise<Record[]>;
+	closeCursor() : Promise<boolean>;
 	lock(record:Record) : Promise<boolean>;
 	insert(record:Record) : Promise<boolean>;
 	update(record:Record) : Promise<boolean>;
 	delete(record:Record) : Promise<boolean>;
+	refresh(record:Record) : Promise<boolean>;
+	query(filters?:FilterStructure) : Promise<boolean>;
+
+	addColumns(columns:string|string[]) : DataSource;
+	addFilter(filter:Filter|FilterStructure) : DataSource;
 }

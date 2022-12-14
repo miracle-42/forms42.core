@@ -10,13 +10,11 @@
  * accompanied this code).
  */
 
-import { Row, Status } from "../view/Row.js";
-import { Block } from "../model/Block.js";
+import { Row } from "../view/Row.js";
 import { Field } from "../view/fields/Field.js";
 import { FieldProperties } from "./FieldProperties.js";
-import { Record as Internal } from "../model/Record.js"
-import { FieldInstance } from "../view/fields/FieldInstance.js";
-import { FieldProperties as Properties } from "../view/fields/FieldProperties";
+import { Block as ModelBlock } from "../model/Block.js";
+import { Record as Internal, RecordState } from "../model/Record.js";
 
 export class Record
 {
@@ -27,70 +25,126 @@ export class Record
 		this.rec$ = rec;
 	}
 
-	public getValue(field:string, dirty?:boolean) : any
+	public get recno() : number
 	{
-		field = field?.toLowerCase();
-		let blk:Block = this.rec$.block;
-		if (dirty == null) dirty = false;
-
-		if (this.rec$.block?.eventTransaction.active)
-			return(blk.eventTransaction.getValue(blk,field));
-
-		if (dirty)
-		{
-			let row:Row = blk?.view.displayed(this.rec$);
-
-			let fld:Field = row.getField(field);
-			if (fld != null) return(blk.getValue(field));
-		}
-
-		return(blk?.getValue(field));
+		return(this.rec$.wrapper.index(this.rec$));
 	}
 
+	public get state() : RecordState
+	{
+		return(this.rec$.state);
+	}
+
+	public get response() : any
+	{
+		return(this.rec$.response);
+	}
+
+	public getValue(field:string) : any
+	{
+		field = field?.toLowerCase();
+		let blk:ModelBlock = this.rec$.block;
+		let row:Row = blk?.view.displayed(this.rec$);
+
+		let fld:Field = row?.getField(field);
+
+		if (fld == null && row != null)
+		{
+			if (blk.view.row == row.rownum)
+				fld = blk.view.getRow(-1)?.getField(field);
+		}
+
+		if (fld != null)
+			return(fld.getValue());
+
+		return(this.rec$.getValue(field));
+	}
+
+	/**
+	 * Make sure the datasource marks current record locked.
+	 */
+	public async lock() : Promise<boolean>
+	{
+		return(this.rec$.wrapper?.lock(this.rec$));
+	}
+
+	/**
+	 * Make sure the datasource marks this record updated.
+	 * @param field any non derived field
+	 */
+	public setDirty(field?:string) : void
+	{
+		this.rec$.setDirty(field);
+		this.rec$.wrapper.dirty = true;
+	}
+
+	/**
+	 * setAndValidate field value as if changed by a user.
+	 * @param field
+	 */
+	 public async setAndValidate(field:string, value:any) : Promise<boolean>
+	 {
+		if (!await this.lock())
+			return(false);
+
+		this.setValue(field,value);
+		field = field?.toLowerCase();
+		let blk:ModelBlock = this.rec$.block;
+
+		return(blk.validateField(this.rec$,field));
+	 }
+
+	/**
+	 * Set the field value. This operation neither locks the record, nor marks it dirty
+	 * @param field
+	 * @param value
+	 */
 	public setValue(field:string, value:any) : void
 	{
 		field = field?.toLowerCase();
-		let blk:Block = this.rec$.block;
+		this.rec$.setValue(field,value);
+		let blk:ModelBlock = this.rec$.block;
+		let row:Row = blk?.view.displayed(this.rec$);
 
-		if (blk?.eventTransaction.active)
+		if (row != null)
 		{
-			this.rec$.block.eventTransaction.setValue(blk,field,value);
-		}
-		else
-		{
-			this.rec$.setValue(field,value);
-			let row:Row = blk?.view.displayed(this.rec$);
-			if (row != null) row.getField(field)?.setValue(value);
+			let fld:Field = row.getField(field);
+			if (this.rec$.dirty) row.invalidate();
+
+			if (fld != null)
+			{
+				fld.setValue(value);
+			}
+			else
+			{
+				if (blk.view.row == row.rownum)
+				{
+					fld = blk.view.getRow(-1)?.getField(field);
+					if (fld != null) fld.setValue(value);
+				}
+			}
 		}
 	}
 
-	public getProperties(field:string, clazz?:string) : FieldProperties[]
+	public getProperties(field?:string, clazz?:string) : FieldProperties
+	{
+		let blk:ModelBlock = this.rec$.block;
+		return(new FieldProperties(blk.view.getRecordProperties(this.rec$,field,clazz)));
+	}
+
+	public setProperties(props:FieldProperties, field:string, clazz?:string) : void
 	{
 		field = field?.toLowerCase();
 		clazz = clazz?.toLowerCase();
+		let blk:ModelBlock = this.rec$.block;
+		blk.view.setRecordProperties(this.rec$,field,clazz,props);
+	}
 
-		let blk:Block = this.rec$.block;
-		let row:Row = blk?.view.displayed(this.rec$);
-
-		let props:FieldProperties[] = [];
-		let instances:FieldInstance[] = [];
-		row?.getField(field)?.getInstancesByClass(clazz).forEach((inst) => instances.push(inst));
-
-		if (blk?.eventTransaction.active)
-		{
-			instances.forEach((inst) =>
-			{
-				let tprops:Properties = blk.eventTransaction.getProperties(inst);
-			})
-		}
-		else
-		{
-			instances.forEach((inst) =>
-			{
-				props.push(new FieldProperties(inst,false,Status.update));
-			})
-		}
-
-		return(props);
+	public clearProperties(field:string, clazz?:string) : void
+	{
+		field = field?.toLowerCase();
+		clazz = clazz?.toLowerCase();
+		let blk:ModelBlock = this.rec$.block;
+		blk.view.setRecordProperties(this.rec$,field,clazz,null);
 	}
 }

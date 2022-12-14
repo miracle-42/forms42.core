@@ -14,6 +14,7 @@ import { Field } from "./Field.js";
 import { BrowserEvent } from "../BrowserEvent.js";
 import { FieldInstance } from "./FieldInstance.js";
 import { Alert } from "../../application/Alert.js";
+import { FlightRecorder } from "../../application/FlightRecorder.js";
 
 interface event
 {
@@ -40,7 +41,10 @@ class WatchDog
 	private check(interval:number) : void
 	{
 		if (!EventStack.running && EventStack.stack$.length > 0)
+		{
+			FlightRecorder.add("@eventstack: restart EventStackHandler");
 			EventStack.handle();
+		}
 
 		setTimeout(() => {this.check(interval);},interval);
 	}

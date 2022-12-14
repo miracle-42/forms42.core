@@ -19,14 +19,27 @@ export class KeyMap
 	public static copy:KeyMap = new KeyMap({key: 'c', ctrl: true});
 	public static undo:KeyMap = new KeyMap({key: 'z', ctrl: true});
 	public static paste:KeyMap = new KeyMap({key: 'v', ctrl: true});
+	public static refresh:KeyMap = new KeyMap({key: 'u', ctrl: true});
 
-	public static sysdate:KeyMap = new KeyMap({key: ' ', ctrl: true});
+	public static dump:KeyMap = new KeyMap({key: KeyCodes.f12, shift: true});
+	public static now:KeyMap = new KeyMap({key: ' ', ctrl: true}, "(space) now", "Todays date");
 
+	public static commit:KeyMap = new KeyMap({key: KeyCodes.f10},"commit","commit all transactions");
+	public static rollback:KeyMap = new KeyMap({key: KeyCodes.f12},"rollback","rollback all transactions");
+
+	public static clearblock:KeyMap = new KeyMap({key: KeyCodes.f4},"clear block","clear block");
+
+	public static enterquery:KeyMap = new KeyMap({key: KeyCodes.f7},"enter query","start query by example mode");
+	public static executequery:KeyMap = new KeyMap({key: KeyCodes.f8},"execute query","execute query");
+	public static lastquery:KeyMap = new KeyMap({key: KeyCodes.f7, shift: true},"last query","recall last query");
+	public static queryeditor:KeyMap = new KeyMap({key: KeyCodes.f7, ctrl: true},"query editor","enter advanced query criterias");
+
+	public static space:KeyMap = new KeyMap({key: ' '});
 	public static enter:KeyMap = new KeyMap({key: KeyCodes.Enter});
 	public static escape:KeyMap = new KeyMap({key: KeyCodes.Escape});
 
-	public static pageup:KeyMap = new KeyMap({key: KeyCodes.ArrowUp, shift:true});
-	public static pagedown:KeyMap = new KeyMap({key: KeyCodes.ArrowDown, shift:true});
+	public static pageup:KeyMap = new KeyMap({key: KeyCodes.ArrowUp, shift:true},"previous page","scroll up");
+	public static pagedown:KeyMap = new KeyMap({key: KeyCodes.ArrowDown, shift:true},"next page","scroll down");
 
 	public static nextfield:KeyMap = new KeyMap({key: KeyCodes.Tab});
 	public static prevfield:KeyMap = new KeyMap({key: KeyCodes.Tab, shift: true});
@@ -34,11 +47,47 @@ export class KeyMap
 	public static prevrecord:KeyMap = new KeyMap({key: KeyCodes.ArrowUp});
 	public static nextrecord:KeyMap = new KeyMap({key: KeyCodes.ArrowDown});
 
-    public static prevblock:KeyMap = new KeyMap({key: KeyCodes.PageUp});
-	public static nextblock:KeyMap = new KeyMap({key: KeyCodes.PageDown});
+   public static prevblock:KeyMap = new KeyMap({key: KeyCodes.PageUp},"previous block","go to previous block");
+	public static nextblock:KeyMap = new KeyMap({key: KeyCodes.PageDown},"next block","go to next block");
 
+	public static delete:KeyMap = new KeyMap({key: KeyCodes.f6},"delete","delete record");
+
+	public static insert:KeyMap = new KeyMap({key: KeyCodes.f5},"insert","insert record");
+	public static insertAbove:KeyMap = new KeyMap({key: KeyCodes.f5, shift: true},"insert above","insert record above the current");
+
+	public static lov:KeyMap = new KeyMap({key: KeyCodes.f9},"list of values","show valid values");
+	public static calendar:KeyMap = new KeyMap({key: KeyCodes.f9},"datepicker","show datepicker");
+
+	public static from(key:string) : KeyMap
+	{
+		return(KeyMap[key]);
+	}
+
+	public static list() : string[][]
+	{
+		let list:string[][] = [];
+
+		Object.keys(KeyMap).forEach((mapped) =>
+		{
+			if (KeyMap[mapped] != null && (KeyMap[mapped] instanceof KeyMap))
+			{
+				if (KeyMap[mapped].name && KeyMap[mapped].desc)
+				{
+					let key:string[] = [];
+					key.push(KeyMap[mapped].toString());
+					key.push(KeyMap[mapped].name);
+					key.push(KeyMap[mapped].desc);
+					list.push(key);
+				}
+			}
+		});
+
+		return(list);
+	}
 
 	private key$:string;
+	private name$:string;
+	private desc$:string;
 	private alt$:boolean;
 	private ctrl$:boolean;
 	private meta$:boolean;
@@ -46,13 +95,16 @@ export class KeyMap
 
 	private signature$:string = null;
 
-	public constructor(def:KeyDefinition)
+	public constructor(def:KeyDefinition, name?:string, desc?:string)
 	{
 		if (def.shift == null)
 		{
 			if (def.key == def.key.toUpperCase() && def.key != def.key.toLowerCase())
 				def.shift = true;
 		}
+
+		this.name = name;
+		this.desc = desc;
 
 		this.key$ = def.key.toLowerCase();
 
@@ -67,6 +119,26 @@ export class KeyMap
 		this.signature$ += (this.ctrl$  ? 't' : 'f');
 		this.signature$ += (this.meta$  ? 't' : 'f');
 		this.signature$ += (this.shift$ ? 't' : 'f');
+	}
+
+	public get name() : string
+	{
+		return(this.name$);
+	}
+
+	public set name(name:string)
+	{
+		this.name$ = name;
+	}
+
+	public get desc() : string
+	{
+		return(this.desc$);
+	}
+
+	public set desc(desc:string)
+	{
+		this.desc$ = desc;
 	}
 
 	public get key() : string
@@ -103,17 +175,32 @@ export class KeyMap
 	{
 		let str:string = "";
 
-		if (this.shift$) str += "shift|";
-		if (this.ctrl$) str += "ctrl|";
-		if (this.alt$) str += "alt|";
-		if (this.meta$) str += "meta|";
+		if (this.ctrl$)
+			str += "ctrl";
 
-		if (str.endsWith("|"))
-			str = "mod: "+str.substring(0,str.length-1)+", ";
+		if (this.alt$)
+		{
+			if (str.length > 0) str += " +";
+			str += "alt";
+		}
 
-		str += "key: ["+this.key$+"]";
+		if (this.shift$)
+		{
+			if (str.length > 0) str += " +";
+			str += "shift";
+		}
 
-		return("{"+str+"}");
+		if (this.meta$)
+		{
+			if (str.length > 0) str += " +";
+			str += "meta";
+		}
+
+		if (str.length > 0)
+			str += " ";
+
+		str += this.key$;
+		return(str);
 	}
 }
 
@@ -153,6 +240,38 @@ export class KeyMapping
 				else map[mapped] = KeyMapping.get(map[mapped].signature);
 			}
 		});
+	}
+
+	public static isRowNav(key:KeyMap) : boolean
+	{
+		switch(key)
+		{
+			case KeyMap.prevfield : return(true);
+			case KeyMap.nextfield : return(true);
+			default 			  		 : return(false);
+		}
+	}
+
+	public static isBlockNav(key:KeyMap) : boolean
+	{
+		switch(key)
+		{
+			case KeyMap.pageup 	  : return(true);
+			case KeyMap.pagedown   : return(true);
+			case KeyMap.prevrecord : return(true);
+			case KeyMap.nextrecord : return(true);
+			default 			   	  : return(false);
+		}
+	}
+
+	public static isFormNav(key:KeyMap) : boolean
+	{
+		switch(key)
+		{
+			case KeyMap.prevblock : return(true);
+			case KeyMap.nextblock : return(true);
+			default 			  		 : return(false);
+		}
 	}
 
 	public static add(keymap:KeyMap) : void

@@ -11,24 +11,47 @@
  */
 
 import { Block } from "../Block.js";
+import { Alert } from "../../application/Alert.js";
 
 export class Key
 {
 	private name$:string = null;
-	private block$:Block = null;
+	private block$:string = null;
 	private fields$:string[] = null;
 
 
-	constructor(name:string, block:Block, fields:string|string[])
+	constructor(block:string|Block, fields:string|string[])
 	{
-		name = name.toLowerCase();
+		if (block == null)
+		{
+			Alert.fatal("Invalid key definition, block: 'null'","Key");
+			return;
+		}
+
+		if (fields == null)
+		{
+			Alert.fatal("Invalid key definition, fields: 'null'","Key");
+			return;
+		}
 
 		if (!Array.isArray(fields))
 			fields = [fields];
 
-		this.name$ = name;
-		this.block$ = block;
+		if (fields.length == 0)
+		{
+			Alert.fatal("Invalid key definition, no fields","Key");
+			return;
+		}
+
+		if (typeof block != "string")
+			block = block.name;
+
+		this.block$ = block.toLowerCase();
+
 		this.fields$ = fields;
+
+		for (let i = 0; i < fields.length; i++)
+			fields[i] = fields[i].toLowerCase();
 	}
 
 	public get name() : string
@@ -36,7 +59,7 @@ export class Key
 		return(this.name$);
 	}
 
-	public get block() : Block
+	public get block() : string
 	{
 		return(this.block$);
 	}

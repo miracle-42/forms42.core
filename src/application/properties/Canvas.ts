@@ -12,44 +12,42 @@
 
 export class Canvas
 {
-    public page:string =
-    `
-    <div name="canvas">
-        <div name="modal"></div>
-        <div name="content"></div>
-    </div>
+	public static page:string =
+	`
+	<div name="canvas">
+		<div name="modal"></div>
+		<div name="content"></div>
+	</div>
+	`;
 
-    `
+	public static ModalStyle:string =
+	`
+		top: 0;
+		left: 0;
+		width: 0;
+		height: 0;
+		position: absolute;
+	`
 
-    public ModalStyle:string =
-    `
-        top: 0;
-        left: 0;
-        width: 0;
-        height: 0;
-        position: absolute;
-    `
+	public static CanvasStyle:string =
+	`
+		overflow: hidden;
+		position: absolute;
+		width: fit-content;
+		height: fit-content;
+	`
 
-    public CanvasStyle:string =
-    `
-        resize: both;
-        overflow: hidden;
-        position: absolute;
-        width: fit-content;
-        height: fit-content;
-    `
+	public static ContentStyle:string =
+	`
+		top: 0;
+		left: 0;
+		width: 100%;
+		height: 100%;
+		position: relative;
+	`
 
-    public ContentStyle:string =
-    `
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        position: relative;
-    `
-
-    public ModalClasses:string = "modal";
-    public CanvasClasses:string = "canvas";
-    public ContentClasses:string = "canvas-content";
-    public CanvasHandleClass:string = "canvas-handle";
+	public static ModalClasses:string = "modal";
+	public static CanvasClasses:string = "canvas";
+	public static ContentClasses:string = "canvas-content";
+	public static CanvasHandleClass:string = "canvas-handle";
 }

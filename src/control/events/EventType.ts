@@ -10,16 +10,29 @@
  * accompanied this code).
  */
 
+/*
+	OBS !!
+	Pre- On- and When- cannot start new transaction in same block
+*/
+
 export enum EventType
 {
 	Key,
 	Mouse,
 
+	PreCommit,
+	PostCommit,
+
+	PreRollback,
+	PostRollback,
+
+	OnTransaction,
+
 	Connect,
 	Disconnect,
 
+	OnCloseForm,
 	PostViewInit,
-	PreCloseForm,
 	PostFormFocus,
 
 	PreForm,
@@ -28,28 +41,30 @@ export enum EventType
 	PreBlock,
 	PostBlock,
 
-    PreField,
-    PostField,
+	PreRecord,
+	PostRecord,
+	OnNewRecord,
 
-	OnTyping,
+	PreField,
+	PostField,
+
+	OnEdit,
 	WhenValidateField,
+	PostValidateField,
 
-    PreRecord,
-    PostRecord,
-
-    OnFetch,
+	OnFetch,
 	PreQuery,
 	PostQuery,
 
-    PreInsert,
-    PostInsert,
+	PreInsert,
+	PostInsert,
 
-    PreUpdate,
-    PostUpdate,
+	PreUpdate,
+	PostUpdate,
 
-    PreDelete,
-    PostDelete,
+	PreDelete,
+	PostDelete,
 
-    WhenLockRecord,
+	OnLockRecord,
 	WhenValidateRecord
 }

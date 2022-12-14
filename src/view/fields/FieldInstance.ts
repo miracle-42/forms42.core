@@ -12,15 +12,16 @@
 
 import { Field } from "./Field.js";
 import { Status } from "../Row.js";
+import { DataType } from "./DataType.js";
 import { Form } from "../../public/Form.js";
 import { FieldTypes } from "./FieldType.js";
 import { Class } from "../../types/Class.js";
 import { Display } from "./implementations/Display.js";
 import { FieldProperties } from "./FieldProperties.js";
-import { BrowserEvent as Event} from "../BrowserEvent.js";
 import { Properties } from "../../application/Properties.js";
 import { FieldFeatureFactory } from "../FieldFeatureFactory.js";
 import { FieldEventHandler } from "./interfaces/FieldEventHandler.js";
+import { BrowserEvent, BrowserEvent as Event} from "../BrowserEvent.js";
 import { FieldImplementation, FieldState } from "./interfaces/FieldImplementation.js";
 
 
@@ -55,74 +56,92 @@ export class FieldInstance implements FieldEventHandler
 		this.qbeproperties$ = this.properties;
 
 		this.element$ = this.impl.getElement();
-
 		this.field$.addInstance(this);
 	}
 
 	public finalize() : void
 	{
+		let query:string = this.properties$.getAttribute("query");
+		let insert:string = this.properties$.getAttribute("insert");
+
+		this.properties$.removeAttribute("query");
+		this.properties$.removeAttribute("insert");
+
+		this.insproperties$ = FieldFeatureFactory.clone(this.properties$);
+
+		if (insert != null)
+		{
+			let flag:boolean = insert.toLowerCase() == "true";
+			this.insproperties$.setReadOnly(!flag);
+		}
+
+		if (query == null) query = "true";
+		let flag:boolean = query.toLowerCase() == "true";
+		this.qbeproperties$ = FieldFeatureFactory.clone(this.properties$);
+
+		this.qbeproperties$.required = false;
+		this.qbeproperties$.readonly = !flag;
+
 		FieldFeatureFactory.apply(this,this.properties$);
 		this.impl.apply(this.properties$,true);
 	}
 
-	public updateDefaultProperties()
-	{
-		if (!this.hasDefaultProperties())
-			return;
-
-		let newprops:FieldProperties = this.defaultProperties;
-		let clazz:Class<FieldImplementation> = FieldTypes.get(newprops.tag,newprops.type);
-
-		if (clazz == this.clazz) this.updateField(newprops);
-		else					 this.changeFieldType(clazz,newprops);
-	}
-
 	public resetProperties() : void
 	{
-		this.applyProperties(null);
+		let props:FieldProperties = null;
+
+		switch(this.field.row.status)
+		{
+			case Status.na 		: if (this.properties$ != this.defproperties$) props = this.defproperties$; break;
+			case Status.qbe 		: if (this.properties$ != this.qbeproperties$) props = this.qbeproperties$; break;
+			case Status.new 		: if (this.properties$ != this.insproperties$) props = this.insproperties$; break;
+			case Status.update 	: if (this.properties$ != this.defproperties$) props = this.defproperties$; break;
+			case Status.insert 	: if (this.properties$ != this.insproperties$) props = this.insproperties$; break;
+		}
+
+		if (props != null)
+			this.applyProperties(props);
+
+		FieldFeatureFactory.setMode(this,this.properties$);
 	}
 
-	public applyProperties(newprops:FieldProperties) : void
+	public setDefaultProperties(props:FieldProperties, status:Status) : void
 	{
-		let change:boolean = false;
-
-		if (newprops == null)
-			newprops = this.defaultProperties;
-
-		if (newprops != null)
+		switch(status)
 		{
-			if (newprops != this.properties)
-				change = true;
-		}
-		else
-		{
-			newprops = this.defaultProperties;
-
-			if (this.properties != this.defaultProperties)
-				change = true;
+			case Status.qbe : this.qbeproperties$ = props; break;
+			case Status.new : this.insproperties$ = props; break;
+			case Status.insert : this.insproperties$ = props; break;
+			default : this.defproperties$ = props;
 		}
 
-		if (newprops != this.properties)
-			change = true;
+		if (status != this.field.row.status)
+			return;
 
-		this.properties$ = newprops;
+		this.properties$ = props;
+		let clazz:Class<FieldImplementation> = FieldTypes.get(props.tag,props.type);
 
-		if (change)
-		{
-			let clazz:Class<FieldImplementation> = FieldTypes.get(newprops.tag,newprops.type);
-
-			if (clazz == this.clazz) this.updateField(newprops);
-			else					 this.changeFieldType(clazz,newprops);
-		}
+		if (clazz == this.clazz) this.updateField(props);
+		else					 this.changeFieldType(clazz,props);
 	}
 
+	public applyProperties(props:FieldProperties) : void
+	{
+		this.properties$ = props;
+		let clazz:Class<FieldImplementation> = FieldTypes.get(props.tag,props.type);
+
+		if (clazz == this.clazz) this.updateField(props);
+		else					 this.changeFieldType(clazz,props);
+	}
+
+	// Properties changed, minor adjustments
 	private updateField(newprops:FieldProperties) : void
 	{
 		let value:any = null;
 		let valid:boolean = this.valid;
 
 		if (!this.field.dirty) value = this.impl.getValue();
-		else				   value = this.impl.getIntermediateValue();
+		else				   	  value = this.impl.getIntermediateValue();
 
 		this.impl.apply(newprops,false);
 		FieldFeatureFactory.reset(this.element);
@@ -131,9 +150,10 @@ export class FieldInstance implements FieldEventHandler
 		this.valid = valid;
 
 		if (!this.field.dirty) this.impl.setValue(value);
-		else				   this.impl.setIntermediateValue(value);
+		else				        this.impl.setIntermediateValue(value);
 	}
 
+	// Properties changed, build new field
 	private changeFieldType(clazz:Class<FieldImplementation>, newprops:FieldProperties) : void
 	{
 		let value:any = null;
@@ -194,6 +214,21 @@ export class FieldInstance implements FieldEventHandler
 		return(this.element$);
 	}
 
+	public get datatype() : DataType
+	{
+		return(this.impl.datatype);
+	}
+
+	public set datatype(type:DataType)
+	{
+		this.impl.datatype = type;
+	}
+
+	public get implementation() : FieldImplementation
+	{
+		return(this.impl);
+	}
+
 	public get ignore() : string
 	{
 		return(this.ignore$);
@@ -230,20 +265,7 @@ export class FieldInstance implements FieldEventHandler
 
 	public get defaultProperties() : FieldProperties
 	{
-		switch(this.field.row.status)
-		{
-			case Status.na:
-				return(this.defproperties$);
-
-			case Status.qbe:
-				return(this.qbeproperties$);
-
-			case Status.insert:
-				return(this.insproperties$);
-
-			case Status.update:
-				return(this.defproperties$);
-		}
+		return(this.defproperties$);
 	}
 
 	public get qbeProperties() : FieldProperties
@@ -261,27 +283,11 @@ export class FieldInstance implements FieldEventHandler
 		return(this.insproperties$);
 	}
 
-	public hasDefaultProperties() : boolean
-	{
-		switch(this.field.row.status)
-		{
-			case Status.na:
-				return(this.properties == this.defproperties$);
-
-			case Status.qbe:
-				return(this.properties == this.qbeproperties$);
-
-			case Status.insert:
-				return(this.properties == this.insproperties$);
-
-			case Status.update:
-				return(this.properties == this.defproperties$);
-		}
-	}
-
 	public clear() : void
 	{
+		this.valid = true;
 		this.impl.clear();
+		this.resetProperties();
 	}
 
 	public getValue() : any
@@ -313,17 +319,75 @@ export class FieldInstance implements FieldEventHandler
 		this.impl.getElement().blur();
 	}
 
-	public focus() : void
+	public focus(events?:boolean) : void
 	{
-		this.impl.getElement().focus();
+		if (events == null) events = true;
+		let focus:Element = document.activeElement;
+		let inst:HTMLElement = this.impl.getElement();
+
+		if (focus != inst)
+		{
+			setTimeout(() =>
+			{
+				let event:BrowserEvent = BrowserEvent.get();
+
+				if (!events)
+					this.ignore = "focus";
+
+				inst.focus();
+
+				if (events)
+				{
+					event.setFocusEvent();
+					this.field.handleEvent(this,event);
+				}
+
+			},10);
+		}
 	}
 
-	public focusable() : boolean
+	public focusable(status?:Status) : boolean
+	{
+		let props:FieldProperties = this.properties$;
+
+		if (status != null)
+		{
+			switch(status)
+			{
+				case Status.na : props = this.defproperties$; break;
+				case Status.qbe : props = this.qbeproperties$; break;
+				case Status.new : props = this.insproperties$; break;
+				case Status.insert : props = this.insproperties$; break;
+				case Status.update : props = this.defproperties$; break;
+			}
+		}
+
+		if (this.impl instanceof Display && props.getAttribute("tabindex") == null)
+			return(false);
+
+		return(props.enabled && !props.hidden);
+	}
+
+	public editable(status?:Status) : boolean
 	{
 		if (this.impl instanceof Display)
 			return(false);
 
-		return(this.properties.enabled);
+		let props:FieldProperties = this.properties$;
+
+		if (status != null)
+		{
+			switch(status)
+			{
+				case Status.na : props = this.defproperties$; break;
+				case Status.qbe : props = this.qbeproperties$; break;
+				case Status.new : props = this.insproperties$; break;
+				case Status.insert : props = this.insproperties$; break;
+				case Status.update : props = this.defproperties$; break;
+			}
+		}
+
+		return(!props.readonly && !props.hidden);
 	}
 
 	public setFieldState(state:FieldState) : void

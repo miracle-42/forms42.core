@@ -25,7 +25,6 @@ export class FieldTypes
 	private static implementations:Map<string,Class<FieldImplementation>> =
 		FieldTypes.init();
 
-
 	private static init() : Map<string,Class<FieldImplementation>>
 	{
 		let map:Map<string,Class<FieldImplementation>> =
@@ -40,7 +39,7 @@ export class FieldTypes
 
 	public static get(tag:string, type?:string) : Class<FieldImplementation>
 	{
-		let impl:Class<FieldImplementation> = FieldTypes.implementations.get(tag.toLowerCase());
+		let impl:Class<FieldImplementation> = FieldTypes.implementations.get(tag?.toLowerCase());
 		if (impl == null) return(Display);
 
 		if (impl == Input && type?.toLowerCase() == "radio")

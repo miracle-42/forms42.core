@@ -14,5 +14,5 @@ import { MenuEntry } from "./MenuEntry.js";
 
 export interface StaticMenuEntry extends MenuEntry
 {
-    entries?:StaticMenuEntry[];
+	entries?:StaticMenuEntry[];
 }

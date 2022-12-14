@@ -11,46 +11,39 @@
  */
 
 import { Tag } from "./Tag.js";
-import { FormField } from "./FormField.js";
 import { Form } from "../../public/Form.js";
+import { Class } from "../../types/Class.js";
 import { Properties } from "../Properties.js";
+import { Form as InternalForm } from "../../internal/Form.js";
 import { FieldInstance } from "../../view/fields/FieldInstance.js";
-import { Indicator } from "./Indicator.js";
 
-export class Field implements Tag, FormField
+export class FromAttribute implements Tag
 {
-	private editable$:boolean = false;
-
-    public parse(component:any, tag:HTMLElement, attr:string) : HTMLElement
-    {
+	public parse(component:any, tag:HTMLElement, attr:string) : string|HTMLElement|HTMLElement[]
+	{
 		if (component == null)
 			throw "@Field: component is null";
 
-		if (!(component instanceof Form))
+		if (!(component instanceof Form) && !(component instanceof InternalForm))
 			throw "@Field: Fields cannot be placed on non-forms "+component.constructor.name;
 
-		let block:string = tag.getAttribute(attr);
+		let binding:string = tag.getAttribute(attr);
 
-		if (block == null)
+		if (binding == null)
 		{
 			attr = Properties.AttributePrefix+attr;
-			tag.setAttribute("block",tag.getAttribute(attr));
+			tag.setAttribute(Properties.BindAttr,tag.getAttribute(attr));
 		}
 
-		let type:string = tag.tagName.toLowerCase();
-		if (type == "input" || type == "select") this.editable$ = true;
+		let type:string = tag.getAttribute("type")?.toLowerCase();
+		let btag:Class<Tag> = Properties.FieldTypeLibrary.get(type);
 
-		if (tag.getAttribute("type")?.toLowerCase() == "row-indicator")
-			return(new Indicator().parse(component,tag,attr));
+		if (btag != null)
+			return(new btag().parse(component,tag,attr));
 
-		if (attr != "block") tag.removeAttribute(attr);
+		if (attr != Properties.BindAttr) tag.removeAttribute(attr);
 		let field:FieldInstance = new FieldInstance(component,tag);
 
-        return(field.element);
-    }
-
-	public get editable() : boolean
-	{
-		return(this.editable$);
+		return(field.element);
 	}
 }

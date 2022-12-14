@@ -10,21 +10,29 @@
  * accompanied this code).
  */
 
-import { Hook } from "./Hook.js";
-import { Form } from "../../public/Form.js";
-import { HookListener } from "./HookListener.js";
-import { Logger, Type } from "../../application/Logger.js";
+import { BindValue } from "./BindValue";
 
-export class HookEvents
+export class SQLRest
 {
-	public static async raise(form:Form, hook:Hook) : Promise<void>
-	{
-		let lsnrs:HookListener[] = HookListener.getHooks(form,hook);
+	stmt:string = "";
+	returnclause:boolean;
+	bindvalues:BindValue[];
 
-		for (let i = 0; i < lsnrs.length; i++)
+	toString() : string
+	{
+		let str = this.stmt;
+
+		if (this.bindvalues != null && this.bindvalues.length > 0)
 		{
-			lsnrs[i].form[lsnrs[i].method]();
-			Logger.log(Type.eventlisteners,Hook[hook]+" Invoking eventhandler: "+lsnrs[i]);
+			str += "[";
+			for (let i = 0; i < this.bindvalues.length; i++)
+			{
+				if (i > 0) str += ", ";
+				str += this.bindvalues[i].toString();
+			}
+			str += "]";
 		}
+
+		return(str);
 	}
 }

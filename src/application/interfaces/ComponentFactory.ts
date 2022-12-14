@@ -5,6 +5,6 @@ import { HTMLFragment } from '../HTMLFragment.js';
 export interface ComponentFactory
 {
     createBean(bean:Class<any>) : any;
-    createForm(form:Class<Form>) : Promise<Form>;
     createFragment(frag:Class<any>) : HTMLFragment;
+    createForm(form:Class<Form>, parameters?:Map<any,any>) : Promise<Form>;
 }

@@ -1,3 +1,4 @@
+
 /*
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 3 only, as
@@ -11,12 +12,10 @@
  */
 
 import { Key } from "./Key";
-import { Block } from "../Block";
 
 export interface Relation
 {
-	mkey:Key;
-	dkey:Key;
-	master:Block;
-	detail:Block;
+	master:Key;
+	detail:Key;
+	orphanQueries:boolean;
 }

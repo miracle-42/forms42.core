@@ -10,6 +10,7 @@
  * accompanied this code).
  */
 
+import { DataType } from "../DataType.js";
 import { FieldProperties } from "../FieldProperties.js";
 import { FieldEventHandler } from "./FieldEventHandler.js";
 
@@ -22,6 +23,8 @@ export enum FieldState
 
 export interface FieldImplementation
 {
+	datatype:DataType;
+
 	apply(properties:FieldProperties, init:boolean) : void
 	create(eventhandler:FieldEventHandler, tag:string) : HTMLElement;
 

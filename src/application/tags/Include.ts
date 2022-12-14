@@ -20,18 +20,18 @@ import { ComponentFactory } from "../ComponentFactory.js";
 
 export class Include implements Tag
 {
-    public parse(_component:any, tag:HTMLElement, _attr:string) : HTMLElement
-    {
-        let module:FormsModule = FormsModule.get();
+	public parse(_component:any, tag:HTMLElement, _attr:string) : HTMLElement
+	{
+		let module:FormsModule = FormsModule.get();
 
-        let src:string = tag.getAttribute("src");
-        let impl:Class<any> = module.getComponent(src);
-        let factory:ComponentFactory = Properties.FactoryImplementationClass;
+		let src:string = tag.getAttribute("src");
+		let impl:Class<any> = module.getComponent(src);
+		let factory:ComponentFactory = Properties.FactoryImplementation;
 
-        if (impl == null)
-            throw "@Include: No class mapped tp "+src;
+		if (impl == null)
+			throw "@Include: No class mapped tp "+src;
 
-        let incl:HTMLFragment = factory.createFragment(impl);
-        return(incl.content as HTMLElement);
-    }
+		let incl:HTMLFragment = factory.createFragment(impl);
+		return(incl.content as HTMLElement);
+	}
 }

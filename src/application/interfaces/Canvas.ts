@@ -2,37 +2,38 @@ import { CanvasComponent } from '../CanvasComponent.js';
 
 export interface View
 {
-    x       : string|number;
-    y       : string|number;
-    width   : string|number;
-    height  : string|number;
+	x       : string|number;
+	y       : string|number;
+	width   : string|number;
+	height  : string|number;
 }
 
 export interface Canvas
 {
 	zindex:number;
-    moveable:boolean;
-    resizable:boolean;
+	moveable:boolean;
+	resizable:boolean;
 
-    close() : void;
+	close() : void;
 
-    block() : void;
-    unblock() : void;
+	block() : void;
+	unblock() : void;
 
 	remove() : void;
-    restore() : void;
-	refresh() : void;
+	restore() : void;
+	replace(page:HTMLElement) : void;
+	attach(parent:HTMLElement) : void;
 
-    getElement() : HTMLElement;
-    getContent() : HTMLElement;
+	getView() : HTMLElement;
+	getContent() : HTMLElement;
 
-    getView() : View;
-    getParentView() : View;
-    setView(view:View) : void;
+	getViewPort() : View;
+	getParentViewPort() : View;
+	setViewPort(view:View) : void;
 
-    getComponent() : CanvasComponent;
-    setComponent(component:CanvasComponent) : void;
+	getComponent() : CanvasComponent;
+	setComponent(component:CanvasComponent) : void;
 
-    getElementById(id:string) : HTMLElement;
-    getElementByName(name:string) : HTMLElement[];
+	getElementById(id:string) : HTMLElement;
+	getElementByName(name:string) : HTMLElement[];
 }

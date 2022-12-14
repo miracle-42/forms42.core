@@ -10,7 +10,7 @@
  * accompanied this code).
  */
 
-import { FormEvent } from "../control/events/FormEvents.js";
+import { FormEvent } from "../control/events/FormEvent.js";
 
 export interface TriggerFunction
 {

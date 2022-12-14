@@ -1,4 +1,4 @@
 export class HTMLFragment
 {
-    content:string|Element;
+	content:string|Element;
 }

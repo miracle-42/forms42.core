@@ -14,15 +14,17 @@ import { Block } from "./Block.js";
 import { Field } from "./fields/Field.js";
 import { Properties } from "../application/Properties.js";
 import { FieldInstance } from "./fields/FieldInstance.js";
-import { Indicator } from "../application/tags/Indicator.js";
+import { RowIndicator } from "../application/tags/RowIndicator.js";
 import { FieldState } from "./fields/interfaces/FieldImplementation.js";
 
 export enum Status
 {
 	na,
 	qbe,
+	new,
 	update,
 	insert,
+	delete
 }
 
 
@@ -31,8 +33,9 @@ export class Row
 	private block$:Block = null;
 	private rownum$:number = null;
 	private validated$:boolean = true;
+	private indicator$:boolean = false;
 	private status$:Status = Status.na;
-	private indicators:Indicator[] = [];
+	private indicators:RowIndicator[] = [];
 	private instances:FieldInstance[] = [];
 	private state$:FieldState = FieldState.DISABLED;
 	private fields:Map<string,Field> = new Map<string,Field>();
@@ -48,14 +51,21 @@ export class Row
 		return(this.block$);
 	}
 
+	public get exist() : boolean
+	{
+		return(this.status != Status.na);
+	}
+
 	public get status() : Status
 	{
-		return(this.status$);
+		if (this.rownum >= 0) return(this.status$);
+		else return(this.block.getCurrentRow().status$);
 	}
 
 	public set status(status:Status)
 	{
-		this.status$ = status;
+		if (this.rownum >= 0) this.status$ = status;
+		else this.block.getCurrentRow().status$ = status;
 	}
 
 	public get rownum() : number
@@ -70,6 +80,9 @@ export class Row
 
 		this.rownum$ = rownum;
 
+		this.indicators.forEach((ind) =>
+		{ind.element.setAttribute("row",rownum+"")})
+
 		this.getFields().forEach((fld) =>
 		{
 			fld.getInstances().forEach((inst) =>
@@ -77,13 +90,32 @@ export class Row
 		});
 	}
 
-	public setIndicator(ind:Indicator) : void
+	public setSingleRow() : void
+	{
+		this.rownum$ = 0;
+
+		this.indicators.forEach((ind) =>
+		{ind.element.setAttribute("row","0")})
+
+		this.getFields().forEach((fld) =>
+		{
+			fld.getInstances().forEach((inst) =>
+			{inst.properties.row = -1;})
+		});
+	}
+
+	public setIndicator(ind:RowIndicator) : void
 	{
 		this.indicators.push(ind);
 	}
 
-	public avtivateIndicators(flag:boolean) : void
+	public activateIndicators(flag:boolean) : void
 	{
+		if (flag && this.indicator$) return;
+		if (!flag && !this.indicator$) return;
+
+		this.indicator$ = flag;
+
 		this.indicators.forEach((ind) =>
 		{
 			if (flag) ind.element.classList.add(Properties.Classes.RowIndicator);
@@ -114,14 +146,21 @@ export class Row
 
 	public get validated() : boolean
 	{
+		if (this.status == Status.new) return(false);
 		if (this.rownum >= 0) return(this.validated$);
 		else return(this.block.getCurrentRow().validated$);
 	}
 
+	public set validated(flag:boolean)
+	{
+		this.validated$ = flag;
+	}
+
 	public invalidate() : void
 	{
-		if (this.rownum >= 0) this.validated$ = false;
-		else this.block.getCurrentRow().validated$ = false;
+		if (this.rownum >= 0) this.validated = false;
+		else this.block.getCurrentRow().validated = false;
+		if (this.status == Status.new) this.status = Status.insert;
 	}
 
 	public async validate() : Promise<boolean>
@@ -130,10 +169,14 @@ export class Row
 			return(true);
 
 		let valid:boolean = true;
+		let validated:boolean = false;
 		let fields:Field[] = this.getFields();
 
 		for (let i = 0; i < fields.length; i++)
+		{
 			if (!fields[i].valid) valid = false;
+			if (!fields[i].validated) validated = false;
+		}
 
 		if (this.rownum >= 0)
 		{
@@ -144,7 +187,10 @@ export class Row
 				fields = curr.getFields();
 
 				for (let i = 0; i < fields.length; i++)
+				{
 					if (!fields[i].valid) valid = false;
+					if (!fields[i].validated) validated = false;
+				}
 			}
 		}
 		else
@@ -152,15 +198,20 @@ export class Row
 			fields = this.block.getCurrentRow().getFields();
 
 			for (let i = 0; i < fields.length; i++)
+			{
 				if (!fields[i].valid) valid = false;
+				if (!fields[i].validated) validated = false;
+			}
 		}
 
-		if (valid)
+		if (!valid) return(false);
+		else
 		{
-			this.validated$ = await this.block.model.validateRecord();
+			if (validated) this.validated = true;
+			else this.validated = await this.block.model.validateRecord();
 		}
 
-		return(this.validated$);
+		return(this.validated);
 	}
 
 	public addField(field:Field) : void
@@ -182,12 +233,6 @@ export class Row
 		}
 
 		return(false);
-	}
-
-	public getInstanceIndex(inst:FieldInstance) : number
-	{
-		console.log(inst.name+" -> "+this.getField(inst.name).getInstances().length)
-		return(this.getField(inst.name).getInstances().indexOf(inst));
 	}
 
 	public getFieldIndex(inst:FieldInstance) : number
@@ -312,13 +357,20 @@ export class Row
 
 	public clear() : void
 	{
-		this.status = Status.na;
-		this.getFieldInstances().forEach((inst) => {inst.clear()});
+		this.activateIndicators(false);
+		this.getFields().forEach((fld) => {fld.clear()});
+	}
+
+	public setState(state:Status) : void
+	{
+		this.status = state;
+
+		this.instances.forEach((inst) =>
+			{inst.resetProperties()})
 	}
 
 	public distribute(field:string, value:any, dirty:boolean) : void
 	{
-		this.status$ = Status.update;
 		this.fields.get(field)?.distribute(null,value,dirty);
 	}
 
@@ -332,14 +384,33 @@ export class Row
 		return(instances);
 	}
 
-	public getFirstInstance() : FieldInstance
+	public getFirstInstance(status:Status) : FieldInstance
 	{
 		let flds:Field[] = this.getFields();
 
-		for (let i = 0; i < flds.length; i++)
+		for (let f = 0; f < flds.length; f++)
 		{
-			let inst:FieldInstance = flds[i].getInstance(i);
-			if (inst.focusable) return(inst);
+			for (let i = 0; i < flds[f].getInstances().length; i++)
+			{
+				let inst:FieldInstance = flds[f].getInstance(i);
+				if (inst.focusable(status)) return(inst);
+			}
+		}
+
+		return(null);
+	}
+
+	public getFirstEditableInstance(status:Status) : FieldInstance
+	{
+		let flds:Field[] = this.getFields();
+
+		for (let f = 0; f < flds.length; f++)
+		{
+			for (let i = 0; i < flds[f].getInstances().length; i++)
+			{
+				let inst:FieldInstance = flds[f].getInstance(i);
+				if (inst.editable(status)) return(inst);
+			}
 		}
 
 		return(null);

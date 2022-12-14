@@ -15,7 +15,7 @@ import { Block } from "../public/Block.js";
 
 export const Column = (url:string) =>
 {
-    function define(comp:Class<Block>)
+	function define(comp:Class<Block>)
 	{
 		console.log("column def")
 	}

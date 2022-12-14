@@ -1,2 +1,2 @@
-const version = "2.1.1";
-console.log("Version "+version);
+const version = "3.16.1";
+console.log("Library Version "+version);

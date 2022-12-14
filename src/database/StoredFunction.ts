@@ -10,13 +10,25 @@
  * accompanied this code).
  */
 
-import { Block } from "./Block.js";
+import { DataType } from "./DataType.js";
+import { StoredProcedure } from "./StoredProcedure.js";
+import { DatabaseConnection } from "../public/DatabaseConnection.js";
 
-
-export class BlockCoordinator
+export class StoredFunction extends StoredProcedure
 {
-	constructor(private block:Block)
+	public constructor(connection:DatabaseConnection)
 	{
+		super(connection);
+		super.returntype$ = "string";
+	}
 
+	public getReturnValue()
+	{
+		return(super.getOutParameter(this.retparm$));
+	}
+
+	public setReturnType(datatype?:DataType|string) : void
+	{
+		super.returntype$ = datatype;
 	}
 }

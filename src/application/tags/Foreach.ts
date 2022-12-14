@@ -17,8 +17,8 @@ import { Properties } from "../Properties.js";
 
 export class Foreach implements Tag
 {
-    public parse(_component:any, tag:HTMLElement, attr:string) : HTMLElement[]
-    {
+	public parse(_component:any, tag:HTMLElement, attr:string) : HTMLElement[]
+	{
 		let tags:HTMLElement[] = [];
 		let expr:string = tag.getAttribute(attr);
 		Logger.log(Type.htmlparser,"Execute custom tag 'foreach' on: "+tag.tagName);
@@ -97,5 +97,5 @@ export class Foreach implements Tag
 		}
 
 		return(tags);
-    }
+	}
 }

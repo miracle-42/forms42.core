@@ -10,9 +10,11 @@
  * accompanied this code).
  */
 
+import { DataType } from "./DataType.js";
+import { Class } from "../../types/Class.js";
+import { DataMapper } from "./DataMapper.js";
 import { FieldInstance } from "./FieldInstance.js";
 import { BasicProperties } from "./BasicProperties.js";
-import { Block as ModelBlock } from "../../model/Block.js";
 
 
 export class FieldProperties extends BasicProperties
@@ -95,5 +97,107 @@ export class FieldProperties extends BasicProperties
 	public set inst(inst:FieldInstance)
 	{
 		this.inst$ = inst;
+	}
+
+	public setTag(tag:string) : FieldProperties
+	{
+		this.tag = tag;
+		return(this);
+	}
+
+	public setType(type:DataType) : FieldProperties
+	{
+		super.setType(type);
+		return(this);
+	}
+
+	public setEnabled(flag:boolean) : FieldProperties
+	{
+		this.enabled = flag;
+		return(this);
+	}
+
+	public setReadOnly(flag:boolean) : FieldProperties
+	{
+		this.readonly = flag;
+		return(this);
+	}
+
+	public setRequired(flag:boolean) : FieldProperties
+	{
+		this.required = flag;
+		return(this);
+	}
+
+	public setHidden(flag:boolean) : FieldProperties
+	{
+		this.hidden = flag;
+		return(this);
+	}
+
+	public setStyles(styles:string) : FieldProperties
+	{
+		this.styles = styles;
+		return(this);
+	}
+
+	public removeStyle(style:string) : FieldProperties
+	{
+		super.removeStyle(style);
+		return(this);
+	}
+
+	public setClass(clazz:string) : FieldProperties
+	{
+		super.setClass(clazz);
+		return(this);
+	}
+
+	public setClasses(classes:string|string[]) : FieldProperties
+	{
+		super.setClasses(classes);
+		return(this);
+	}
+
+	public removeClass(clazz:any) : FieldProperties
+	{
+		super.removeClass(clazz);
+		return(this);
+	}
+
+	public setAttribute(attr:string, value?:any) : FieldProperties
+	{
+		super.setAttribute(attr,value);
+		return(this);
+	}
+
+	public setAttributes(attrs:Map<string,string>) : FieldProperties
+	{
+		super.setAttributes(attrs);
+		return(this);
+	}
+
+	public removeAttribute(attr:string) : FieldProperties
+	{
+		super.removeAttribute(attr);
+		return(this);
+	}
+
+	public setValue(value:string) : FieldProperties
+	{
+		this.value = value;
+		return(this);
+	}
+
+    public setValidValues(values: string[] | Set<string> | Map<string,string>) : FieldProperties
+	{
+		this.validValues = values;
+		return(this);
+	}
+
+	public setMapper(mapper:Class<DataMapper>|DataMapper|string) : FieldProperties
+	{
+		super.setMapper(mapper);
+		return(this);
 	}
 }
