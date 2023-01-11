@@ -1,31 +1,43 @@
 /*
- * This code is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 3 only, as
- * published by the Free Software Foundation.
+  MIT License
 
- * This code is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
- * version 2 for more details (a copy is included in the LICENSE file that
- * accompanied this code).
- */
+  Copyright © 2023 Alex Høffner
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy of this software
+  and associated documentation files (the “Software”), to deal in the Software without
+  restriction, including without limitation the rights to use, copy, modify, merge, publish,
+  distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the
+  Software is furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in all copies or
+  substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING
+  BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+  NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+  DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+  FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+*/
 
 import { Form } from "./Form.js";
 import { Row, Status } from "./Row.js";
 import { Field } from "./fields/Field.js";
-import { Record } from "../model/Record.js";
+import { DataType } from "./fields/DataType.js";
+import { FieldInfo } from "./fields/FieldInfo.js";
 import { KeyMap } from "../control/events/KeyMap.js";
-import { Form as ModelForm } from '../model/Form.js';
 import { Block as ModelBlock } from '../model/Block.js';
 import { RecordProperties } from "./RecordProperties.js";
-import { MouseMap } from "../control/events/MouseMap.js";
+import { Record, RecordState } from "../model/Record.js";
+import { Properties } from "../application/Properties.js";
 import { FieldInstance } from "./fields/FieldInstance.js";
-import { Form as InterfaceForm } from '../public/Form.js';
 import { EventType } from "../control/events/EventType.js";
-import { Block as InterfaceBlock } from '../public/Block.js';
-import { FieldProperties } from "./fields/FieldProperties.js";
+import { FormBacking } from "../application/FormBacking.js";
+import { BasicProperties } from "./fields/BasicProperties.js";
+import { FieldFeatureFactory } from "./FieldFeatureFactory.js";
+import { FlightRecorder } from "../application/FlightRecorder.js";
 import { FieldState } from "./fields/interfaces/FieldImplementation.js";
 import { FormEvent, FormEvents } from "../control/events/FormEvents.js";
+import { FilterIndicator } from "../application/tags/FilterIndicator.js";
 
 
 export class Block
@@ -36,22 +48,19 @@ export class Block
 	private name$:string = null;
 	private model$:ModelBlock = null;
 	private fieldnames$:string[] = null;
-	private volatile$:FieldInstance = null;
+	private curinst$:FieldInstance = null;
 	private rows$:Map<number,Row> = new Map<number,Row>();
 	private displayed$:Map<object,Row> = new Map<object,Row>();
-	private recprops$:RecordProperties = new RecordProperties(this);
+	private recprops$:RecordProperties = new RecordProperties();
+	private fieldinfo$:Map<string,FieldInfo> = new Map<string,FieldInfo>();
 
-	public static getBlock(block:InterfaceBlock) : Block
-	{
-		return(Form.getForm(block.form).getBlock(block.name));
-	}
-
-	constructor(form:InterfaceForm,name:string)
+	constructor(form:Form,name:string)
 	{
 		this.name$ = name;
+		this.form$ = form;
 		this.fieldnames$ = [];
-		this.form$ = Form.getForm(form);
-		ModelBlock.create(Form.getForm(form),this);
+		this.form.addBlock(this);
+		FormBacking.getModelBlock(this,true);
 	}
 
 	public get row() : number
@@ -80,21 +89,74 @@ export class Block
 		return(this.model$);
 	}
 
-	public focus() : void
+	public get current() : FieldInstance
 	{
-		this.getRow(0)?.getFirstInstance()?.focus();
+		if (this.curinst$ == null)
+			this.curinst$ = this.getCurrentRow().getFirstInstance(Status.na);
+
+		return(this.curinst$);
 	}
 
-	public getVolatileInstance() : FieldInstance
+	public set current(inst:FieldInstance)
 	{
-		return(this.volatile$);
+		this.curinst$ = inst;
 	}
 
-	public getField(field:string) : Field
+	public blur() : void
 	{
-		let fld:Field = this.getRow(this.row)?.getField(field);
-		if (fld == null) fld = this.getRow(-1)?.getField(field);
-		return(fld);
+		this.current?.blur();
+	}
+
+	public focus(events?:boolean) : void
+	{
+		if (this.current)
+		{
+			this.current.focus(events);
+		}
+		else
+		{
+			let state:RecordState = this.model.getRecord().state;
+			let inst:FieldInstance = this.getCurrentRow()?.getFirstInstance(this.convert(state));
+			if (inst == null) inst = this.getRow(-1)?.getFirstInstance(this.convert(state));
+			inst?.focus();
+		}
+	}
+
+	public goField(field:string, clazz?:string) : void
+	{
+		field = field?.toLowerCase();
+		clazz = clazz?.toLowerCase();
+
+		let inst:FieldInstance = null;
+		let ifield:Field = this.getCurrentRow().getField(field);
+
+		if (ifield == null)
+			ifield = this.getRow(-1)?.getField(field);
+
+		if (ifield != null)
+		{
+			let instances:FieldInstance[] = ifield?.getInstancesByClass(clazz);
+			if (instances.length > 0) inst = instances[0];
+			inst?.focus();
+		}
+	}
+
+	public empty(rownum?:number) : boolean
+	{
+		if (rownum == null)
+			rownum = this.row;
+
+		let row:Row = this.getRow(rownum);
+		if (row.status == Status.na) return(true);
+		if (row.status == Status.new) return(true);
+		if (row.status == Status.qbe) return(true);
+
+		return(false);
+	}
+
+	public get fieldinfo() : Map<string,FieldInfo>
+	{
+		return(this.fieldinfo$);
 	}
 
 	public getAllFields(field?:string) : Field[]
@@ -120,7 +182,7 @@ export class Block
 
 			for (let i = 0; i < this.rows; i++)
 			{
-				let fld:Field = current.getField(field);
+				let fld:Field = this.getRow(i).getField(field);
 				if (fld != null) fields.push(fld);
 			}
 		}
@@ -128,7 +190,7 @@ export class Block
 		return(fields);
 	}
 
-	public getFields(name?:string) : Field[]
+	public getCurrentFields(name?:string) : Field[]
 	{
 		let row:Row = null;
 		let fields:Field[] = [];
@@ -159,10 +221,73 @@ export class Block
 		return(fields);
 	}
 
-	public getFieldInstances() : FieldInstance[]
+	public getFields(field:string) : FieldInstance[]
+	{
+		let matched:FieldInstance[] = [];
+		let fields:Field[] = this.getAllFields(field);
+
+		for (let f = 0; f < fields.length; f++)
+			matched.push(...fields[f].getInstances());
+
+		return(matched);
+	}
+
+	public getFieldById(field:string, id:string) : FieldInstance
+	{
+		let fields:Field[] = this.getAllFields(field);
+
+		for (let f = 0; f < fields.length; f++)
+		{
+			let instances:FieldInstance[] = fields[f].getInstances();
+
+			for (let i = 0; i < instances.length; i++)
+			{
+				if (instances[i].id == id)
+					return(instances[i]);
+			}
+		}
+
+		return(null);
+	}
+
+	public getFieldsByClass(field:string, clazz:string) : FieldInstance[]
+	{
+		let matched:FieldInstance[] = [];
+		let fields:Field[] = this.getAllFields(field);
+
+		for (let f = 0; f < fields.length; f++)
+		{
+			let instances:FieldInstance[] = fields[f].getInstances();
+
+			if (clazz == null)
+			{
+				matched.push(...instances);
+			}
+			else
+			{
+				for (let i = 0; i < instances.length; i++)
+				{
+					if (instances[i].properties.hasClass(clazz))
+						matched.push(instances[i]);
+				}
+			}
+		}
+
+		return(matched);
+	}
+
+	public getFieldInstances(allrows?:boolean) : FieldInstance[]
 	{
 		let row:Row = null;
 		let instances:FieldInstance[] = [];
+
+		if (allrows)
+		{
+			this.rows$.forEach((row) =>
+			{instances.push(...row.getFieldInstances())})
+
+			return(instances);
+		}
 
 		row = this.getRow(this.row);
 		if (row != null) instances.push(...row.getFieldInstances());
@@ -173,26 +298,82 @@ export class Block
 		return(instances);
 	}
 
-	public getValue(field:string) : any
-	{
-		return(this.rows$.get(this.row).getField(field)?.getValue());
-	}
-
 	public getFieldNames() : string[]
 	{
 		return(this.fieldnames$);
 	}
 
-	public setRecordProperties(record:Record, inst:FieldInstance, props:FieldProperties) : void
+	public getRecordProperties(record:Record, field:string, clazz:string) : BasicProperties
 	{
-		if (record == null) record = this.model.getRecord(0);
-		let row:Row = this.getRow(inst.row);
-		this.recprops$.set(row,inst,record,props);
+		if (field == null)
+			field = this.current.name;
+
+		let props:BasicProperties = this.recprops$.get(record,field,clazz);
+
+		if (props == null)
+		{
+			let instances:FieldInstance[] = this.getFieldInstances();
+
+			for (let i = 0; i < instances.length; i++)
+			{
+				if (instances[i].name == field)
+				{
+					if (clazz == null)
+						return(instances[i].properties);
+
+					if (instances[i].properties.hasClass(clazz))
+						return(instances[i].properties);
+				}
+			}
+		}
+
+		return(props);
 	}
 
-	public async setEventTransaction(event:EventType, offset:number) : Promise<void>
+	public setRecordProperties(record:Record, field:string, clazz:string, props:BasicProperties) : void
 	{
-		await this.model.setEventTransaction(event,offset);
+		if (props == null)
+		{
+			this.recprops$.delete(record,field,clazz);
+
+			let row:Row = this.displayed(record);
+			this.recprops$.reset(row,field,clazz);
+
+			if (this.row == row?.rownum)
+			{
+				row = this.getRow(-1);
+				this.recprops$.reset(row,field,clazz);
+			}
+		}
+		else
+		{
+			this.recprops$.set(record,field,clazz,props);
+
+			if (this.displayed(record))
+			{
+				this.applyRecordProperties(record,true,field);
+				this.applyRecordProperties(record,false,field);
+			}
+		}
+	}
+
+	public applyRecordProperties(record:Record, baserec:boolean, field?:string) : void
+	{
+		let row:Row = this.displayed(record);
+
+		if (!baserec) row = this.getRow(-1);
+		if (row != null) this.recprops$.apply(row,record,field);
+	}
+
+	public async setEventTransaction(event:EventType) : Promise<void>
+	{
+		let record:Record = this.model.getRecord();
+		await this.model.setEventTransaction(event,record);
+	}
+
+	public async wait4EventTransaction(event:EventType) : Promise<boolean>
+	{
+		return(this.model.wait4EventTransaction(event));
 	}
 
 	public endEventTransaction(event:EventType, apply:boolean) : void
@@ -200,23 +381,66 @@ export class Block
 		this.model.endEventTransaction(event,apply);
 	}
 
-	public async validate(inst?:FieldInstance, value?:any) : Promise<boolean>
+	public async lock() : Promise<boolean>
 	{
-		if (inst == null)
+		let success:boolean = await this.model.lock();
+
+		if (!success)
 		{
-			return(this.getRow(this.row).validate());
+			await this.model.refresh();
+			this.display(this.row,this.model.getRecord());
+			return(false);
 		}
-		else
+
+		return(success);
+	}
+
+	public async validateField(inst:FieldInstance, value?:any) : Promise<boolean>
+	{
+		await this.setEventTransaction(EventType.WhenValidateField);
+		let success:boolean = await this.fireFieldEvent(EventType.WhenValidateField,inst);
+		this.endEventTransaction(EventType.WhenValidateField,success);
+
+		if (success)
 		{
-			await this.setEventTransaction(EventType.WhenValidateField,0);
-			let success:boolean = await this.fireFieldEvent(EventType.WhenValidateField,inst);
-			this.endEventTransaction(EventType.WhenValidateField,success);
+			value = inst.getValue();
+			success = this.model.setValue(inst.name,value);
 
 			if (success)
-				this.model$.setValue(inst.name,value);
-
-			return(success);
+			{
+				if (this.model.querymode) this.model.setFilter(inst.name);
+				else success = await this.model.form.queryFieldDetails(this.name,inst.name);
+			}
 		}
+
+		return(success);
+	}
+
+	public async postValidateField(inst:FieldInstance) : Promise<boolean>
+	{
+		if (!await this.wait4EventTransaction(EventType.PostValidateField)) return(false);
+		return(await this.fireFieldEvent(EventType.PostValidateField,inst));
+	}
+
+	public async validateRow() : Promise<boolean>
+	{
+		if (!this.getCurrentRow().exist) return(true);
+		if (this.getCurrentRow().validated) return(true);
+
+		if (!await this.current.field.validate(this.current))
+			return(false);
+
+		return(this.getRow(this.row).validate());
+	}
+
+	public async validate() : Promise<boolean>
+	{
+		return(this.validateRow());
+	}
+
+	public set validated(flag:boolean)
+	{
+		this.getRow(this.row).validated = flag;
 	}
 
 	public get validated() : boolean
@@ -224,16 +448,48 @@ export class Block
 		return(this.getRow(this.row).validated);
 	}
 
-	public clear(props:boolean) : boolean
+	public reset() : void
 	{
-		if (!this.validated)
-			return(false);
+		this.rows$.forEach((row) =>
+		{
+			row.status = Status.na;
 
+			row.clear();
+			row.setFieldState(FieldState.OPEN);
+		});
+	}
+
+	public cancel() : void
+	{
+		this.model.cancel();
+		this.clear(true,true,true);
+	}
+
+	public clear(props:boolean, rewind:boolean, fields?:boolean) : void
+	{
+		this.current = null;
 		this.displayed$.clear();
-		if (props) this.recprops$.clear();
-		this.rows$.forEach((row) => {row.clear()});
 
-		return(true);
+		if (rewind)
+		{
+			this.row$ = -1;
+			this.model.rewind();
+		}
+
+		if (props) this.recprops$.clear();
+		if (fields) this.model.querymode = false;
+
+		this.rows$.forEach((row) =>
+		{
+			row.status = Status.na;
+			if (fields) row.clear();
+
+			if (fields && row.rownum == 0)
+				this.getRow(0).activateIndicators(true);
+		});
+
+		if (fields)
+			this.lockUnused();
 	}
 
 	public addInstance(inst:FieldInstance) : void
@@ -242,28 +498,36 @@ export class Block
 			this.fieldnames$.push(inst.name);
 	}
 
-	public async onKey(inst:FieldInstance, key:KeyMap) : Promise<boolean>
+	public async onEdit(inst:FieldInstance) : Promise<boolean>
 	{
-		if (key == null) return(true);
-		return(this.fireKeyEvent(inst,key));
-	}
+		this.curinst$ = inst;
 
-	public async onMouse(inst:FieldInstance, mevent:MouseMap) : Promise<boolean>
-	{
-		return(this.fireMouseEvent(inst,mevent));
-	}
+		if (!this.fieldinfo.get(inst.name)?.derived)
+		{
+			if (!await this.lock())
+				return(false);
+		}
 
-	public async onTyping(inst:FieldInstance) : Promise<boolean>
-	{
-		this.volatile$ = inst;
-		await this.setEventTransaction(EventType.OnTyping,0);
-		let success:boolean = await	this.fireFieldEvent(EventType.OnTyping,inst);
-		this.endEventTransaction(EventType.OnTyping,success);
-		this.volatile$ = null;
+		this.model.setDirty();
+
+		await this.setEventTransaction(EventType.OnEdit);
+		let success:boolean = await this.fireFieldEvent(EventType.OnEdit,inst);
+		this.endEventTransaction(EventType.OnEdit,success);
+
 		return(success);
 	}
 
-	public async navigate(key:KeyMap, inst:FieldInstance) : Promise<FieldInstance>
+	public async prevrecord() : Promise<boolean>
+	{
+		return(this.navigateBlock(KeyMap.prevrecord,this.current));
+	}
+
+	public async nextrecord() : Promise<boolean>
+	{
+		return(this.navigateBlock(KeyMap.nextrecord,this.current));
+	}
+
+	public async navigateRow(key:KeyMap, inst:FieldInstance) : Promise<boolean>
 	{
 		let next:FieldInstance = inst;
 
@@ -271,36 +535,67 @@ export class Block
 		{
 			case KeyMap.nextfield :
 			{
-				next = inst.field.row.nextField(inst)
+				next = inst.field.row.nextField(inst);
 				break;
 			}
 
 			case KeyMap.prevfield :
 			{
-				next = inst.field.row.prevField(inst)
+				next = inst.field.row.prevField(inst);
 				break;
 			}
+		}
 
+		if (next != inst)
+			inst.blur();
+
+		next.focus();
+		return(true);
+	}
+
+	public async navigateBlock(key:KeyMap, inst:FieldInstance) : Promise<boolean>
+	{
+		let nav:boolean = false;
+		let next:FieldInstance = inst;
+
+		if (this.model.querymode)
+			return(false);
+
+		if (this.getCurrentRow().status == Status.na)
+			return(false);
+
+		if (!await inst.field.validate(inst))
+		{
+			next.focus();
+			return(false);
+		}
+
+		switch(key)
+		{
 			case KeyMap.nextrecord :
 			{
+				nav = true;
 				next = await this.scroll(inst,1);
 				break;
 			}
 
 			case KeyMap.prevrecord :
 			{
+				nav = true;
 				next = await this.scroll(inst,-1);
 				break;
 			}
 
 			case KeyMap.pageup :
 			{
+				nav = true;
 				next = await this.scroll(inst,-this.rows);
 				break;
 			}
 
 			case KeyMap.pagedown :
 			{
+				nav = true;
 				next = await this.scroll(inst,this.rows);
 				break;
 			}
@@ -310,7 +605,7 @@ export class Block
 			inst.blur();
 
 		next.focus();
-		return(next);
+		return(nav);
 	}
 
 	public offset(inst:FieldInstance) : number
@@ -320,12 +615,18 @@ export class Block
 		return(row-this.row$);
 	}
 
+	public move(delta:number) : number
+	{
+		this.row$ = this.row + delta;
+		return(this.row$);
+	}
+
 	public getCurrentRow() : Row
 	{
 		return(this.rows$.get(this.row));
 	}
 
-	public setCurrentRow(rownum:number) : void
+	public setCurrentRow(rownum:number, newqry:boolean) : void
 	{
 		if (this.row$ < 0)
 		{
@@ -338,7 +639,9 @@ export class Block
 			{
 				this.openrow();
 				this.displaycurrent();
-				this.model.queryDetails();
+
+				if (this.getRow(this.row).status != Status.qbe)
+					this.model.queryDetails(newqry);
 			}
 
 			this.setIndicators(null,rownum);
@@ -350,16 +653,21 @@ export class Block
 			return;
 
 		this.model$.move(rownum-this.row);
-
 		this.setIndicators(this.row$,rownum);
-		this.getRow(this.row).setFieldState(FieldState.READONLY);
+
+		let prev:Row = this.getRow(this.row);
+
+		if (prev.status != Status.na)
+			prev.setFieldState(FieldState.READONLY);
 
 		this.row$ = rownum;
 
 		if (this.getRow(this.row).status != Status.na)
 		{
 			this.openrow();
-			this.model.queryDetails();
+
+			if (this.getRow(this.row).status != Status.qbe)
+				this.model.queryDetails(newqry);
 		}
 
 		this.displaycurrent();
@@ -377,7 +685,20 @@ export class Block
 
 	public displayed(record:Record) : Row
 	{
-		return(this.displayed$.get(record.id));
+		return(this.displayed$.get(record?.id));
+	}
+
+	public setStatus(record:Record) : void
+	{
+		let row:Row = this.displayed(record);
+
+		if (row == null)
+			return;
+
+		row.setState(this.convert(record.state));
+
+		if (row.rownum == this.row)
+			this.getRow(-1)?.setState(this.convert(record.state));
 	}
 
 	public display(rownum:number, record:Record) : void
@@ -388,37 +709,78 @@ export class Block
 		if (row.getFieldState() == FieldState.DISABLED)
 			row.setFieldState(FieldState.READONLY);
 
+		row.status = this.convert(record.state);
+
 		row.clear();
-		this.applyProperties(row,record);
+		this.applyRecordProperties(record,true);
 
 		record.values.forEach((field) =>
-		{row.distribute(field.name,field.value,false);})
+		{row.distribute(field.name,field.value,false)});
 	}
 
 	public lockUnused()
 	{
 		let row:Row = this.getRow(0);
 
+		if (this.getCurrentRow().status == Status.na)
+		{
+			let curr:Row = this.getRow(-1);
+
+			if (curr != null)
+			{
+				curr.clear();
+				curr.setFieldState(FieldState.READONLY);
+			}
+		}
+
 		if (row.status == Status.na)
 		{
+			row.clear();
 			row.setFieldState(FieldState.READONLY);
-			this.getRow(-1).setFieldState(FieldState.READONLY);
 		}
 
 		for (let i = 1; i < this.rows; i++)
 		{
 			row = this.getRow(i);
-			if (row.status == Status.na) row.setFieldState(FieldState.DISABLED);
+
+			if (row.status == Status.na)
+			{
+				row.clear();
+				row.setFieldState(FieldState.DISABLED);
+			}
 		}
 	}
 
-	public refresh(rownum:number, record:Record) : void
+	public refresh(record:Record) : void
 	{
-		this.display(rownum,record);
-		if (rownum == this.row) this.displaycurrent();
+		let row:Row = this.displayed(record);
+
+		if (row == null) return;
+		this.display(row.rownum,record);
+
+		if (row.rownum == this.row)
+		{
+			this.displaycurrent();
+			this.model.queryDetails(true);
+			this.setIndicators(null,this.row);
+		}
 	}
 
-	private openrow()
+	public swapInstances(inst1:FieldInstance, inst2:FieldInstance) : void
+	{
+		let swp1:HTMLElement = document.createElement("p");
+		let swp2:HTMLElement = document.createElement("p");
+
+		inst1.element.replaceWith(swp1);
+		inst2.element.replaceWith(swp2);
+
+		swp1.replaceWith(inst2.element);
+		swp2.replaceWith(inst1.element);
+
+		this.getRow(inst1.row).swapInstances(inst1,inst2);
+	}
+
+	public openrow()
 	{
 		let row:Row = this.getRow(this.row);
 		let current:Row = this.rows$.get(-1);
@@ -439,45 +801,49 @@ export class Block
 	{
 		let current:Row = this.rows$.get(-1);
 
-		if (current != null)
+		if (current != null && this.getCurrentRow().exist)
 		{
-			current.clear();
 			let record:Record = this.model.getRecord();
+			current.status = this.convert(record.state);
 
-			this.applyProperties(current,record);
+			current.clear();
+			this.applyRecordProperties(record,false);
 			record.values.forEach((field) => {current.distribute(field.name,field.value,false);});
 		}
 	}
 
 	private setIndicators(prev:number, next:number) : void
 	{
-		if (next != null) this.getRow(next).avtivateIndicators(true);
-		if (prev != null) this.getRow(prev).avtivateIndicators(false);
+		if (prev == next) prev = null;
+		if (next != null) this.getRow(next)?.activateIndicators(true);
+		if (prev != null) this.getRow(prev)?.activateIndicators(false);
 	}
 
-	private applyProperties(row:Row, record:Record) : void
+	public setFilterIndicators(indicators:FilterIndicator[], flag:boolean) : void
 	{
-		record.values.forEach((field) =>
+		indicators?.forEach((ind) =>
 		{
-			row.getField(field.name)?.getInstances().
-			forEach((inst) => {inst.applyProperties(this.recprops$.get(row,inst,record))})
+			if (flag) ind.element.classList.add(Properties.Classes.FilterIndicator);
+			else      ind.element.classList.remove(Properties.Classes.FilterIndicator);
 		})
 	}
 
 	private async scroll(inst:FieldInstance, scroll:number) : Promise<FieldInstance>
 	{
+		let success:boolean = null;
 		let next:FieldInstance = inst;
 
-		if (!await this.validate())
+		if (!await this.validateRow())
 			return(next);
 
 		if (this.row + scroll < 0 || this.row + scroll >= this.rows)
 		{
 			let available:number = 0;
+			let crow:number = this.row;
 
 			// fetch up from first, down from last
 			if (scroll < 0) available = await this.model.prefetch(scroll,-this.row);
-			else			available = await this.model.prefetch(scroll,this.rows-this.row-1);
+			else				 available = await this.model.prefetch(scroll,this.rows-this.row-1);
 
 			if (available <= 0) return(next);
 			let move:boolean = (scroll > 1 && available <= this.row);
@@ -486,8 +852,15 @@ export class Block
 			{
 				inst.ignore = "blur";
 
-				let idx:number = this.getCurrentRow().getFieldIndex(inst);
-				next = this.getRow(available-1).getFieldByIndex(idx);
+				if (inst.row < 0)
+				{
+					next = inst;
+				}
+				else
+				{
+					let idx:number = this.getCurrentRow().getFieldIndex(inst);
+					next = this.getRow(available-1).getFieldByIndex(idx);
+				}
 
 				next.ignore = "focus";
 			}
@@ -498,24 +871,24 @@ export class Block
 			if (!await this.form.leaveRecord(this))
 				return(next);
 
-			this.model.scroll(scroll,this.row);
+			let moved:number = this.model.scroll(scroll,this.row);
 
-			await this.form.enterRecord(this,0);
-			await this.form.enterField(inst,0);
+			success = await this.form.enterRecord(this,0);
+			if (!success) FlightRecorder.add("@view.block.scroll : unable to enter record. block: "+this.name+" inst: "+inst);
 
-			if (move)
-			{
-				this.setIndicators(this.row$,next.row);
-				this.row$ = next.row;
-			}
+			success = await this.form.enterField(inst,0);
+			if (!success) FlightRecorder.add("@view.block.scroll : unable to enter field. block: "+this.name+" inst: "+inst);
+
+			if (moved < scroll)
+				this.row$ -= scroll - moved;
 
 			this.displaycurrent();
-			this.model.queryDetails();
+			this.model.queryDetails(true);
+			this.setIndicators(crow,this.row$);
 
 			return(next);
 		}
 
-		this.getCurrentRow().validate();
 		let idx:number = inst.field.row.getFieldIndex(inst);
 
 		if (inst.row < 0)
@@ -535,15 +908,84 @@ export class Block
 			if (!await this.form.enterField(inst,scroll))
 				return(next);
 
-			this.setCurrentRow(this.row+scroll);
+			this.setCurrentRow(this.row+scroll,true);
 		}
 		else
 		{
 			let row:Row = this.getRow(this.row+scroll);
 			if (row.status != Status.na) next = row.getFieldByIndex(idx);
+			if (!next) FlightRecorder.add("@view.block.scroll : no available fields. block: "+this.name+" inst: "+inst+" idx: "+idx);
 		}
 
 		return(next);
+	}
+
+	public findFirst(record:Record) : FieldInstance
+	{
+		let inst:FieldInstance = null;
+		let row:Row = this.displayed(record);
+		let curr:boolean = this.current.row < 0;
+		let status:Status = this.convert(record?.state);
+
+		if (curr)
+		{
+			inst = this.getRow(-1)?.getFirstInstance(status);
+			if (inst == null) inst = row?.getFirstInstance(status);
+		}
+		else
+		{
+			inst = row?.getFirstInstance(status);
+			if (inst == null) inst = this.getRow(-1)?.getFirstInstance(status);
+		}
+
+		return(inst);
+	}
+
+	public hasQueryableFields() : boolean
+	{
+		let row:Row = this.getRow(0);
+		let curr:Row = this.getRow(-1);
+
+		let inst:FieldInstance = null;
+
+		inst = row?.getFirstEditableInstance(Status.qbe);
+		if (!inst) inst = curr?.getFirstEditableInstance(Status.qbe);
+
+		return(inst != null);
+	}
+
+	public hasInsertableFields() : boolean
+	{
+		let row:Row = this.getRow(0);
+		let curr:Row = this.getRow(-1);
+
+		let inst:FieldInstance = null;
+
+		inst = row?.getFirstEditableInstance(Status.new);
+		if (!inst) inst = curr?.getFirstEditableInstance(Status.new);
+
+		return(inst != null);
+	}
+
+	public findFirstEditable(record:Record) : FieldInstance
+	{
+		let inst:FieldInstance = null;
+		let row:Row = this.displayed(record);
+		let curr:boolean = this.current.row < 0;
+		let status:Status = this.convert(record?.state);
+
+		if (curr)
+		{
+			inst = this.getRow(-1)?.getFirstEditableInstance(status);
+			if (inst == null) inst = row?.getFirstEditableInstance(status);
+		}
+		else
+		{
+			inst = row?.getFirstEditableInstance(status);
+			if (inst == null) inst = this.getRow(-1)?.getFirstEditableInstance(status);
+		}
+
+		return(inst);
 	}
 
 	public finalize() : void
@@ -552,13 +994,19 @@ export class Block
 		this.rows$.forEach((row) => {rows.push(row)});
 		this.form.getIndicators(this.name).forEach((ind) => this.getRow(ind.row)?.setIndicator(ind));
 
+		if (rows.length == 0)
+			rows.push(new Row(this,0));
+
+		if (this.model == null)
+			this.model$ = FormBacking.getModelBlock(this,true);
+
 		/*
 		 * If only 1 row, set rownum to 0;
 		 * Otherwise sort all rows and re-number then from 0 - rows
 		*/
 
 		if (rows.length == 1)
-			rows[0].rownum = 0;
+			rows[0].setSingleRow();
 
 		if (rows.length > 1)
 		{
@@ -591,6 +1039,147 @@ export class Block
 		this.setIndicators(null,0);
 		this.getRow(0)?.setFieldState(FieldState.READONLY);
 		this.getRow(-1)?.setFieldState(FieldState.READONLY);
+
+		// set most restrictive datatype and derived
+		this.getFieldNames().forEach((name) =>
+		{
+			let type:DataType = null;
+			let tdiff:boolean = false;
+			let ddiff:boolean = false;
+			let query:boolean = false;
+			let derived:boolean = null;
+			let advquery:boolean = true;
+
+			this.getAllFields(name).forEach((fld) =>
+			{
+				fld.getInstances().forEach((inst) =>
+				{
+					if (type == null)
+						type = inst.datatype;
+
+					if (derived == null)
+						derived = inst.properties.derived;
+
+					if (inst.properties.derived != derived)
+						ddiff = true;
+
+					if (advquery == true)
+						advquery = inst.properties.advquery;
+
+					if (inst.properties.derived)
+						derived = true;
+
+					if (!inst.qbeProperties.readonly)
+						query = true;
+
+					if (!inst.qbeProperties.advquery)
+						advquery = true;
+
+					if (inst.datatype != type)
+					{
+						switch(type)
+						{
+							case DataType.string :
+							{
+								if (inst.datatype != DataType.string)
+								{
+									tdiff = true;
+									type = inst.datatype;
+								}
+							}
+							break;
+
+							case DataType.integer :
+							{
+								if (inst.datatype != DataType.integer)
+									tdiff = true;
+							}
+							break;
+
+							case DataType.decimal :
+							{
+								if (inst.datatype != DataType.integer)
+									type = DataType.integer;
+
+								if (inst.datatype != DataType.decimal)
+									tdiff = true;
+							}
+							break;
+
+							case DataType.date :
+							case DataType.datetime :
+							{
+								if (inst.datatype == DataType.string)
+									tdiff = true;
+
+								if (inst.datatype == DataType.integer)
+									tdiff = true;
+
+								if (inst.datatype == DataType.decimal)
+									tdiff = true;
+							} break;
+						}
+					}
+				})
+			});
+
+			if (tdiff || ddiff || !advquery)
+			{
+				this.getAllFields(name).forEach((fld) =>
+				{
+					fld.getInstances().forEach((inst) =>
+					{
+						if (tdiff)
+						{
+							inst.datatype = type;
+							inst.defaultProperties.setType(type);
+							FieldFeatureFactory.applyType(inst);
+						}
+
+						if (ddiff)
+						{
+							inst.defaultProperties.derived = derived;
+						}
+
+						if (!advquery)
+						{
+							inst.qbeProperties.advquery = advquery;
+						}
+					});
+				});
+			}
+
+			this.fieldinfo$.set(name,new FieldInfo(type,query,derived))
+		});
+
+		this.model$ = FormBacking.getModelForm(this.form.parent).getBlock(this.name);
+	}
+
+	public disableQuery() : void
+	{
+		let instances:FieldInstance[] = this.getFieldInstances(true);
+
+		for (let i = 0; i < instances.length; i++)
+			instances[i].qbeProperties.readonly = true;
+	}
+
+	public disableInsert() : void
+	{
+		let instances:FieldInstance[] = this.getFieldInstances(true);
+
+		for (let i = 0; i < instances.length; i++)
+			instances[i].insertProperties.readonly = true;
+	}
+
+	public disableUpdate() : void
+	{
+		let instances:FieldInstance[] = this.getFieldInstances(true);
+
+		for (let i = 0; i < instances.length; i++)
+		{
+			if (!this.fieldinfo.get(instances[i].name)?.derived)
+				instances[i].updateProperties.readonly = true;
+		}
 	}
 
 	public distribute(field:Field, value:any, dirty:boolean) : void
@@ -602,26 +1191,34 @@ export class Block
 		else		 this.getRow(cr)?.distribute(field.name,value,dirty);
 	}
 
+	public convert(status:RecordState) : Status
+	{
+		switch(status)
+		{
+			case null							: return(Status.na);
+			case RecordState.New 			: return(Status.new);
+			case RecordState.Query 			: return(Status.update);
+			case RecordState.Updated 		: return(Status.update);
+			case RecordState.Deleted 		: return(Status.delete);
+			case RecordState.Inserted 		: return(Status.insert);
+			case RecordState.QueryFilter 	: return(Status.qbe);
+		}
+	}
+
 	public linkModel() : void
 	{
-		this.model$ = ModelForm.getForm(this.form.parent).getBlock(this.name);
-	}
-
-	private async fireKeyEvent(inst:FieldInstance, key:KeyMap) : Promise<boolean>
-	{
-		let frmevent:FormEvent = FormEvent.KeyEvent(this.form.parent,inst,key);
-		return(FormEvents.raise(frmevent));
-	}
-
-	private async fireMouseEvent(inst:FieldInstance, mevent:MouseMap) : Promise<boolean>
-	{
-		let frmevent:FormEvent = FormEvent.MouseEvent(this.form.parent,mevent,inst);
-		return(FormEvents.raise(frmevent));
+		this.model$ = FormBacking.getModelForm(this.form.parent).getBlock(this.name);
 	}
 
 	private async fireFieldEvent(type:EventType, inst:FieldInstance) : Promise<boolean>
 	{
 		let frmevent:FormEvent = FormEvent.FieldEvent(type,inst);
+		return(FormEvents.raise(frmevent));
+	}
+
+	private async fireBlockEvent(type:EventType, inst?:FieldInstance) : Promise<boolean>
+	{
+		let frmevent:FormEvent = FormEvent.BlockEvent(type,this.form.parent,this.name,inst);
 		return(FormEvents.raise(frmevent));
 	}
 }

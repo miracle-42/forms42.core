@@ -1,79 +1,194 @@
 /*
- * This code is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 3 only, as
- * published by the Free Software Foundation.
+  MIT License
 
- * This code is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
- * version 2 for more details (a copy is included in the LICENSE file that
- * accompanied this code).
- */
+  Copyright © 2023 Alex Høffner
 
-import { Record } from "../Record.js";
+  Permission is hereby granted, free of charge, to any person obtaining a copy of this software
+  and associated documentation files (the “Software”), to deal in the Software without
+  restriction, including without limitation the rights to use, copy, modify, merge, publish,
+  distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the
+  Software is furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in all copies or
+  substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING
+  BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+  NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+  DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+  FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+*/
+
 import { Filter } from "../interfaces/Filter.js";
-import { DataSource } from "../interfaces/DataSource.js";
+import { Record, RecordState } from "../Record.js";
+import { FilterStructure } from "../FilterStructure.js";
+import { DataSource, LockMode } from "../interfaces/DataSource.js";
 
 export class MemoryTable implements DataSource
 {
-	private pos$:number = 0;
-	private rows$:number = -1;
-	private records:Record[] = [];
-	private filters:Filter[] = [];
-	private cursor:Record[] = null;
-	private inserted$:Record[] = [];
-
+	public name:string;
 	public arrayfecth:number = 1;
-	private insertable$:boolean = true;
+	public rowlocking = LockMode.None;
+	public queryallowed:boolean = true;
+	public insertallowed:boolean = true;
+	public updateallowed:boolean = true;
+	public deleteallowed:boolean = true;
 
-	public queryable:boolean  = true;
-	public updateable:boolean = true;
-	public deleteable:boolean = true;
+	private pos$:number = 0;
+	private order$:string = null;
+	private dirty$:Record[] = [];
+	private columns$:string[] = [];
+	private records$:Record[] = [];
+	private sorting$:SortOrder[] = [];
+	private limit$:FilterStructure = null;
 
-	public constructor(columns?:string[], records?:any[][])
+	private filter:FilterStructure;
+
+	public constructor(columns?:string|string[], records?:number|any[][])
 	{
-		if (columns != null && records != null)
+		if (columns == null) columns = [];
+		if (records == null) records = [];
+
+		if (!Array.isArray(columns))
+			columns = [columns];
+
+		this.columns$ = columns;
+
+		if (typeof records === "number")
 		{
-			records.forEach((rec) =>
+			let rows:number = records;
+
+			records = [];
+			if (columns != null && columns.length > 0)
 			{
-				let data:{[name:string]: any} = {};
+				for (let r = 0; r < rows; r++)
+				{
+					let row:any[] = [];
 
-				for (let i = 0; i < rec.length && i < columns.length; i++)
-					data[columns[i]] = rec[i];
+					for (let c = 0; c < columns.length; c++)
+						row.push(null);
 
-				this.records.push(new Record(null,data));
-			});
+					records.push(row);
+				}
+			}
 		}
+
+		records.forEach((rec) =>
+		{
+			this.records$.push(new Record(this,rec));
+		});
 	}
 
-	public set maxrows(rows:number)
+	public clear() : void
 	{
-		this.rows$ = rows;
+		this.dirty$ = [];
 	}
 
-	public get insertable() : boolean
+	public setData(data:any[][]) : void
 	{
-		return(this.insertable$ && this.records.length < this.rows$);
+		this.records$ = [];
+		data.forEach((row) =>
+		{this.records$.push(new Record(this,row));})
 	}
 
-	public set insertable(flag:boolean)
+	public clone(columns?:string|string[]) : MemoryTable
 	{
-		this.insertable$ = flag;
+		let table:any[][] = [];
+
+		if (columns == null)
+		{
+			columns = [];
+			columns.push(...this.columns$);
+		}
+
+		if (!Array.isArray(columns))
+			columns = [columns];
+
+		for (let r = 0; r < this.records$.length; r++)
+		{
+			let row:any[] = [];
+
+			for (let c = 0; c < columns.length; c++)
+				row[c] = this.records$[r].getValue(columns[c]);
+
+			table.push(row);
+		}
+
+		let clone:MemoryTable = new MemoryTable(columns,table);
+
+		clone.sorting = this.sorting;
+		clone.arrayfecth = this.arrayfecth;
+
+		return(clone);
 	}
 
-	public getFilters() : Filter[]
+	public get sorting() : string
 	{
-		return(this.filters);
+		return(this.order$);
 	}
 
-	public addFilter(filter:Filter) : void
+	public set sorting(order:string)
 	{
-		this.filters.push(filter);
+		this.order$ = order;
+		this.sorting$ = SortOrder.parse(order);
 	}
 
-	public setFilters(filters:Filter[]) : void
+	public get columns() : string[]
 	{
-		this.filters = filters;
+		return(this.columns$);
+	}
+
+	public addColumns(columns:string|string[]) : MemoryTable
+	{
+		if (!Array.isArray(columns))
+			columns = [columns];
+
+		columns.forEach((column) =>
+		{
+			column = column?.toLowerCase();
+
+			if (column && !this.columns$.includes(column))
+				this.columns$.push(column);
+		})
+
+		return(this);
+	}
+
+	public removeColumns(columns:string|string[]) : MemoryTable
+	{
+		if (!Array.isArray(columns))
+			columns = [columns];
+
+		let cols:string[] = [];
+
+		for (let i = 0; i < columns.length; i++)
+			columns[i] = columns[i]?.toLowerCase();
+
+		for (let i = 0; i < this.columns$.length; i++)
+		{
+			if (!columns.includes(this.columns$[i]))
+				cols.push(this.columns$[i]);
+		}
+
+		this.columns$ = cols;
+		return(this);
+	}
+
+	public addFilter(filter:Filter | FilterStructure) : MemoryTable
+	{
+		if (this.limit$ == null)
+		{
+			if (filter instanceof FilterStructure)
+			{
+				this.limit$ = filter;
+				return(this);
+			}
+
+			this.limit$ = new FilterStructure();
+		}
+
+		this.limit$.and(filter);
+		return(this);
 	}
 
 	public async lock(_record:Record) : Promise<boolean>
@@ -81,63 +196,162 @@ export class MemoryTable implements DataSource
 		return(true);
 	}
 
-	public async post() : Promise<boolean>
+	public async undo() : Promise<Record[]>
 	{
-		this.records.push(...this.inserted$);
-		return(true);
+		let undo:Record[] = [];
+
+		for (let i = 0; i < this.dirty$.length; i++)
+		{
+			this.dirty$[i].refresh();
+			undo.push(this.dirty$[i]);
+
+			switch(this.dirty$[i].state)
+			{
+				case RecordState.New:
+
+				case RecordState.Inserted:
+
+					this.delete(this.dirty$[i]);
+					this.dirty$[i].state = RecordState.Deleted;
+					break;
+
+				case RecordState.Updated:
+					this.dirty$[i].state = RecordState.Query;
+					break;
+
+				case RecordState.Deleted:
+					this.dirty$[i].state = RecordState.Query;
+					break;
+			}
+		}
+
+		return(undo);
 	}
 
-	public async refresh(_record:Record) : Promise<void>
+	public async flush() : Promise<Record[]>
 	{
-		null;
+		let processed:Record[] = [];
+
+		this.dirty$.forEach((rec) =>
+		{
+			if (rec.state == RecordState.Inserted)
+			{
+				processed.push(rec);
+				this.records$.push(rec);
+				rec.response = {status: "inserted"};
+			}
+
+			if (rec.state == RecordState.Updated)
+			{
+				processed.push(rec);
+				rec.response = {status: "updated"};
+			}
+
+			if (rec.state == RecordState.Deleted)
+			{
+				processed.push(rec);
+				rec.response = {status: "deleted"};
+
+				let recno:number = this.indexOf(this.records$,rec.id);
+
+				if (recno >= 0)
+				{
+					this.pos$--;
+					this.records$.splice(recno,1);
+				}
+			}
+		});
+
+		this.dirty$ = [];
+		return(processed);
+	}
+
+	public async refresh(record:Record) : Promise<boolean>
+	{
+		record.refresh();
+		return(true);
 	}
 
 	public async insert(record:Record) : Promise<boolean>
 	{
-		this.inserted$.push(record);
+		if (!this.dirty$.includes(record))
+			this.dirty$.push(record);
 		return(true);
 	}
 
-	public async update(_record:Record) : Promise<boolean>
+	public async update(record:Record) : Promise<boolean>
 	{
+		if (!this.dirty$.includes(record))
+			this.dirty$.push(record);
 		return(true);
 	}
 
 	public async delete(record:Record) : Promise<boolean>
 	{
-		let rec:number = this.indexOf(this.records,record.id);
-		let ins:number = this.indexOf(this.inserted$,record.id);
+		if (!this.dirty$.includes(record))
+			this.dirty$.push(record);
+		return(true);
+	}
 
-		if (ins >= 0)
-			this.inserted$ = this.inserted$.splice(ins,1);
+	public async query(filter?:FilterStructure) : Promise<boolean>
+	{
+		this.pos$ = 0;
+		this.filter = filter;
 
-		if (rec >= 0)
-			this.records = this.records.splice(rec,1);
+		if (this.limit$ != null)
+		{
+			if (!this.filter) this.filter = this.limit$;
+			else this.filter.and(this.limit$,"limit");
+		}
 
-		return(ins >= 0 || rec >= 0);
+		if (this.sorting$.length > 0)
+		{
+			this.records$ = this.records$.sort((r1,r2) =>
+			{
+				for (let i = 0; i < this.sorting$.length; i++)
+				{
+					let column:string = this.sorting$[i].column;
+					let ascending:boolean = this.sorting$[i].ascending;
+
+					let value1:any = r1.getValue(column);
+					let value2:any = r2.getValue(column);
+
+					if (value1 < value2)
+						return(ascending ? -1 : 1)
+
+					if (value1 > value2)
+						return(ascending ? 1 : -1)
+
+					return(0);
+				}
+			})
+		}
+
+		return(true);
 	}
 
 	public async fetch() : Promise<Record[]>
 	{
-		let cursor:Record[] = this.cursor;
-		if (this.pos$ >= cursor.length) return([]);
-		return([cursor[this.pos$++]]);
+		if (this.pos$ >= this.records$.length)
+			return([]);
+
+		while(this.pos$ < this.records$.length)
+		{
+			if (this.filter.empty)
+				return([this.records$[this.pos$++]]);
+
+			if (await this.filter.evaluate(this.records$[this.pos$]))
+				return([this.records$[this.pos$++]]);
+
+			this.pos$++;
+		}
+
+		return([]);
 	}
 
-	public async query() : Promise<boolean>
+	public async closeCursor() : Promise<boolean>
 	{
-		this.post();
-
-		if (!this.queryable)
-			return(false);
-
-		this.cursor = this.records;
 		return(true);
-	}
-
-	public closeCursor(): void
-	{
-		this.cursor = null;
 	}
 
 	private indexOf(records:Record[],oid:any) : number
@@ -148,5 +362,51 @@ export class MemoryTable implements DataSource
 				return(i);
 		}
 		return(-1);
+	}
+}
+
+class SortOrder
+{
+	column:string;
+	ascending:boolean = true;
+
+	static parse(order:string) : SortOrder[]
+	{
+		let sorting:SortOrder[] = [];
+
+		if (order != null)
+		{
+			let parts:string[] = order.split(",");
+
+			parts.forEach((column) =>
+			{
+				column = column.trim();
+
+				if (column.length > 0)
+				{
+					let ascending:string = null;
+
+					if (column.includes(' '))
+					{
+						let tokens:string[] = column.split(' ');
+
+						column = tokens[0].trim();
+						ascending = tokens[1].trim();
+					}
+
+					column = column.toLowerCase();
+					ascending = ascending?.toLowerCase();
+
+					let part:SortOrder = new SortOrder();
+
+					part.column = column;
+					if (ascending == "desc") part.ascending = false;
+
+					sorting.push(part);
+				}
+			})
+		}
+
+		return(sorting);
 	}
 }

@@ -1,16 +1,25 @@
 /*
- * This code is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 3 only, as
- * published by the Free Software Foundation.
+  MIT License
 
- * This code is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
- * version 2 for more details (a copy is included in the LICENSE file that
- * accompanied this code).
- */
+  Copyright © 2023 Alex Høffner
 
-import { DataType } from "./DataType.js";
+  Permission is hereby granted, free of charge, to any person obtaining a copy of this software
+  and associated documentation files (the “Software”), to deal in the Software without
+  restriction, including without limitation the rights to use, copy, modify, merge, publish,
+  distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the
+  Software is furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in all copies or
+  substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING
+  BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+  NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+  DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+  FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+*/
+
+import { DataType } from "../DataType.js";
 import { DataMapper, Tier } from "../DataMapper.js";
 import { BrowserEvent } from "../../BrowserEvent.js";
 import { dates } from "../../../model/dates/dates.js";
@@ -29,8 +38,18 @@ export class Radio implements FieldImplementation, EventListenerObject
 	private value$:string = null;
 	private checked:string = null;
 	private element:HTMLInputElement = null;
-	private datatype:DataType = DataType.string;
-    private event:BrowserEvent = BrowserEvent.get();
+	private datatype$:DataType = DataType.string;
+   private event:BrowserEvent = BrowserEvent.get();
+
+	public get datatype() : DataType
+	{
+		return(this.datatype$);
+	}
+
+	public set datatype(type:DataType)
+	{
+		this.datatype = type;
+	}
 
 	public create(eventhandler:FieldEventHandler, _tag:string) : HTMLInputElement
 	{
@@ -50,6 +69,7 @@ export class Radio implements FieldImplementation, EventListenerObject
 
 	public clear() : void
 	{
+		this.value$ = null;
 		this.element.checked = false;
 	}
 
@@ -62,14 +82,17 @@ export class Radio implements FieldImplementation, EventListenerObject
 			return(this.value$);
 		}
 
-		if (DataType[this.datatype].startsWith("date"))
+		if (this.datatype$ == DataType.boolean)
+			return((""+this.value$).toLowerCase() == "true");
+
+		if (DataType[this.datatype$].startsWith("date"))
 		{
 			let value:Date = dates.parse(this.value$);
 			if (value == null) this.element.checked = false;
 			return(value);
 		}
 
-		if (this.datatype == DataType.integer || this.datatype == DataType.decimal)
+		if (this.datatype$ == DataType.integer || this.datatype$ == DataType.decimal)
 			return(+this.value$);
 
 		return(this.value$);
@@ -83,7 +106,12 @@ export class Radio implements FieldImplementation, EventListenerObject
 			value = this.datamapper.getValue(Tier.Frontend);
 		}
 
-		if (DataType[this.datatype].startsWith("date"))
+		if (this.datatype$ == DataType.boolean)
+		{
+				value = ((""+value).toLowerCase() == "true");
+		}
+
+		if (DataType[this.datatype$].startsWith("date"))
 		{
 			if (typeof value === "number")
 				value = new Date(+value);
@@ -148,27 +176,30 @@ export class Radio implements FieldImplementation, EventListenerObject
 
 	public setAttributes(attributes:Map<string,string>) : void
 	{
-		this.datatype = DataType.string;
+		this.datatype$ = DataType.string;
 
 		attributes.forEach((_value,attr) =>
         {
 			if (attr == "date")
-				this.datatype = DataType.date;
+				this.datatype$ = DataType.date;
 
 			if (attr == "datetime")
-				this.datatype = DataType.datetime;
+				this.datatype$ = DataType.datetime;
+
+			if (attr == "boolean")
+				this.datatype$ = DataType.boolean;
 
 			if (attr == "integer")
-				this.datatype = DataType.integer;
+				this.datatype$ = DataType.integer;
 
 			if (attr == "decimal")
-				this.datatype = DataType.decimal;
+				this.datatype$ = DataType.decimal;
 		});
 	}
 
 	public async handleEvent(event:Event) : Promise<void>
 	{
-        let bubble:boolean = false;
+      let bubble:boolean = false;
 		this.event.setEvent(event);
 
 		if (this.event.type == "wait")
@@ -201,19 +232,19 @@ export class Radio implements FieldImplementation, EventListenerObject
 		if (this.event.onScrollUp)
 			bubble = true;
 
-        if (this.event.onScrollDown)
+      if (this.event.onScrollDown)
 			bubble = true;
 
-        if (this.event.onCtrlKeyDown)
+      if (this.event.onCtrlKeyDown)
 			bubble = true;
 
-        if (this.event.onFuncKey)
+      if (this.event.onFuncKey)
 			bubble = true;
 
 		this.event.preventDefault();
 
-		if (this.event.navigation) bubble = true;
-		else if (this.event.ignore) return;
+		if (this.event.ignore) return;
+		if (this.event.custom) bubble = true;
 
 		if (bubble)
 			await this.eventhandler.handleEvent(this.event);
@@ -224,28 +255,34 @@ export class Radio implements FieldImplementation, EventListenerObject
 		return(this.element.value);
 	}
 
-    private addEvents(element:HTMLElement) : void
-    {
-        element.addEventListener("blur",this);
-        element.addEventListener("focus",this);
-        element.addEventListener("change",this);
+	private addEvents(element:HTMLElement) : void
+	{
+		element.addEventListener("blur",this);
+		element.addEventListener("focus",this);
+		element.addEventListener("change",this);
 
-        element.addEventListener("keyup",this);
-        element.addEventListener("keydown",this);
-        element.addEventListener("keypress",this);
+		element.addEventListener("keyup",this);
+		element.addEventListener("keydown",this);
+		element.addEventListener("keypress",this);
 
-        element.addEventListener("wheel",this);
-        element.addEventListener("mouseup",this);
-        element.addEventListener("mouseout",this);
-        element.addEventListener("mousedown",this);
-        element.addEventListener("mouseover",this);
-        element.addEventListener("mousemove",this);
+		element.addEventListener("wheel",this);
+		element.addEventListener("mouseup",this);
+		element.addEventListener("mouseout",this);
+		element.addEventListener("mousedown",this);
+		element.addEventListener("mouseover",this);
+		element.addEventListener("mousemove",this);
 
-        element.addEventListener("drop",this);
-        element.addEventListener("dragover",this);
+		element.addEventListener("drop",this);
 
-        element.addEventListener("click",this);
-        element.addEventListener("dblclick",this);
-        element.addEventListener("contextmenu",this);
-    }
+		element.addEventListener("drag",this);
+		element.addEventListener("dragend",this);
+		element.addEventListener("dragover",this);
+		element.addEventListener("dragstart",this);
+		element.addEventListener("dragenter",this);
+		element.addEventListener("dragleave",this);
+
+		element.addEventListener("click",this);
+		element.addEventListener("dblclick",this);
+		element.addEventListener("contextmenu",this);
+	}
 }

@@ -1,25 +1,35 @@
 /*
- * This code is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 3 only, as
- * published by the Free Software Foundation.
+  MIT License
 
- * This code is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
- * version 2 for more details (a copy is included in the LICENSE file that
- * accompanied this code).
- */
+  Copyright © 2023 Alex Høffner
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy of this software
+  and associated documentation files (the “Software”), to deal in the Software without
+  restriction, including without limitation the rights to use, copy, modify, merge, publish,
+  distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the
+  Software is furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in all copies or
+  substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING
+  BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+  NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+  DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+  FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+*/
 
 import { Status } from "./Row.js";
-import { Block } from "../model/Block.js";
+import { Properties } from "../application/Properties.js";
 import { FieldInstance } from "./fields/FieldInstance.js";
 import { FieldProperties } from "./fields/FieldProperties.js";
 import { BasicProperties } from "./fields/BasicProperties.js";
-import { EventTransaction } from "../model/EventTransaction.js";
 
 
 export class FieldFeatureFactory
 {
+	private static lists:number = 0;
+
 	public static initialize(props:BasicProperties, inst:FieldInstance, deflt:boolean, type:Status) : void
 	{
 		let exist:BasicProperties = inst.properties;
@@ -29,6 +39,7 @@ export class FieldFeatureFactory
 			switch(type)
 			{
 				case Status.qbe: exist = inst.qbeProperties; break;
+				case Status.new: exist = inst.insertProperties; break;
 				case Status.insert: exist = inst.insertProperties; break;
 				case Status.update: exist = inst.updateProperties; break;
 				default: exist = inst.defaultProperties;
@@ -53,57 +64,40 @@ export class FieldFeatureFactory
 		return(clone);
 	}
 
-	public static merge(props:BasicProperties, inst$:FieldInstance, defprops:boolean) : void
+	public static replace(props:BasicProperties, inst$:FieldInstance, status:Status) : void
 	{
 		let fprops:FieldProperties = null;
 
-		let model:Block = inst$.field.block.model;
-		let trx:EventTransaction = model.eventTransaction;
-
-		if (trx.active)
+		switch(status)
 		{
-			fprops = trx.getProperties(inst$);
-			if (defprops) fprops = trx.getDefaultProperties(inst$);
+			case Status.qbe : fprops = FieldFeatureFactory.clone(inst$.qbeProperties); break;
+			case Status.new : fprops = FieldFeatureFactory.clone(inst$.insertProperties); break;
+			case Status.insert : fprops = FieldFeatureFactory.clone(inst$.insertProperties); break;
+			case Status.update : fprops = FieldFeatureFactory.clone(inst$.updateProperties); break;
+			default: fprops = FieldFeatureFactory.clone(inst$.properties);
 		}
-		else
-		{
-			fprops = inst$.properties;
-			if (defprops) fprops = inst$.defaultProperties;
-		}
-
-		if (inst$.hasDefaultProperties() && !defprops)
-			fprops = FieldFeatureFactory.clone(fprops);
 
 		FieldFeatureFactory.copyBasic(props,fprops);
 
-		if (trx.active)
-		{
-			trx.addPropertyChange(inst$,fprops,defprops);
-		}
-		else
-		{
-			if (!defprops) inst$.applyProperties(fprops);
-			else		   inst$.updateDefaultProperties();
-		}
+		if (status == null) inst$.applyProperties(fprops);
+		else		   		  inst$.setDefaultProperties(fprops,status);
 	}
 
 	public static copyBasic(exist:BasicProperties, props:BasicProperties) : void
 	{
-		let list:Map<string,string> = new Map<string,string>();
-		exist.getValidValues().forEach((value,key) => {list.set(key,value)});
-
 		props.tag = exist.tag;
-		props.validValues = list;
 		props.value = exist.value;
 		props.mapper = exist.mapper;
 		props.hidden = exist.hidden;
 		props.enabled = exist.enabled;
+		props.derived = exist.derived;
 		props.readonly = exist.readonly;
 		props.required = exist.required;
 
-		exist.getClasses().forEach((clazz) => {props.setClass(clazz)});
-		exist.getAttributes().forEach((value,name) => {props.setAttribute(name,value)});
-		exist.getStyles().forEach((element) => {props.setStyle(element.style,element.value)});
+		props.setStyles([...exist.getStyles()]);
+		props.setClasses([...exist.getClasses()]);
+		props.setAttributes(new Map(exist.getAttributes()));
+		props.validValues = new Map(exist.getValidValues());
 	}
 
 	public static reset(tag:HTMLElement) : void
@@ -117,13 +111,13 @@ export class FieldFeatureFactory
 	public static consume(tag:HTMLElement) : FieldProperties
 	{
 		let props:FieldProperties = new FieldProperties();
-		let skip:string[] = ["id","name","block","row","value"];
+		let skip:string[] = ["id","name",Properties.BindAttr,"row","value"];
 
 		props.tag = tag.tagName;
 		props.id = tag.getAttribute("id");
 
-		props.block = tag.getAttribute("block");
-		if (props.block == null) throw "@FieldInstance: Block must be specified";
+		props.block = tag.getAttribute(Properties.BindAttr);
+		if (props.block == null) throw "@FieldInstance: "+Properties.BindAttr+" must be specified";
 
 		props.name = tag.getAttribute("name");
 		if (props.name == null)	throw "@FieldInstance: Name must be specified";
@@ -177,6 +171,12 @@ export class FieldFeatureFactory
 				props.setAttribute(name,tag.getAttribute(name));
 		});
 
+		if (props.getAttributes().has("date"))
+			props.setAttribute("size",Properties.DateFormat.length);
+
+		if (props.getAttributes().has("datetime"))
+			props.setAttribute("size",(Properties.DateFormat+Properties.TimeFormat).length);
+
 		return(props);
 	}
 
@@ -186,7 +186,7 @@ export class FieldFeatureFactory
 		let tag:HTMLElement = inst.element;
 
 		tag.setAttribute("name",props.name);
-		tag.setAttribute("block",props.block);
+		tag.setAttribute(Properties.BindAttr,props.block);
 
 		if (props.id != null) tag.setAttribute("id",props.id);
 		if (props.row >= 0) tag.setAttribute("row",""+props.row);
@@ -228,6 +228,56 @@ export class FieldFeatureFactory
 		}
 	}
 
+	public static setMode(inst:FieldInstance, props:FieldProperties) : void
+	{
+		let tag:HTMLElement = inst.element;
+
+		if (props.getAttribute(Properties.RecordModeAttr) != null)
+			return;
+
+		if (inst.field.row.status == Status.update)
+		{
+			if (props.enabled && !props.readonly)
+				tag.setAttribute(Properties.RecordModeAttr,"update");
+		}
+
+		if (inst.field.row.status == Status.delete)
+		{
+			if (props.enabled && !props.readonly)
+				tag.setAttribute(Properties.RecordModeAttr,"deleted");
+		}
+
+		if (inst.field.row.status == Status.qbe)
+		{
+			if (props.enabled && !props.readonly)
+				tag.setAttribute(Properties.RecordModeAttr,"query");
+		}
+
+		if (inst.field.row.status == Status.new || inst.field.row.status == Status.insert)
+		{
+			if (props.enabled && !props.readonly)
+				tag.setAttribute(Properties.RecordModeAttr,"insert");
+		}
+	}
+
+	public static applyType(inst:FieldInstance) : void
+	{
+		let type:string = null;
+		let props:FieldProperties = inst.defaultProperties;
+
+		if (props.hasClass("date")) type = "date";
+		if (props.hasClass("integer")) type = "integer";
+		if (props.hasClass("decimal")) type = "decimal";
+		if (props.hasClass("datetime")) type = "datetime";
+
+		inst.element.classList.remove("date");
+		inst.element.classList.remove("integer");
+		inst.element.classList.remove("decimal");
+		inst.element.classList.remove("datetime");
+
+		inst.element.classList.add(type);
+	}
+
 	public static createDataList(inst:FieldInstance, props:FieldProperties) : void
 	{
 		let tag:HTMLElement = inst.element;
@@ -243,7 +293,7 @@ export class FieldFeatureFactory
 
 			if (list == null)
 			{
-				list = (new Date()).getTime()+"";
+				list = "list"+(FieldFeatureFactory.lists++);
 				props.setAttribute("list",list);
 				tag.setAttribute("list",list);
 				inst.defaultProperties.setAttribute("values",list);
@@ -341,7 +391,7 @@ export class FieldFeatureFactory
 		tag.options.add(new Option())
 		let options:HTMLOptionElement[] = [];
 
-		props.getValidValues().forEach((value:string,label:string) =>
+		props.getValidValues().forEach((label:string,value:string) =>
 		{
 			if (label.length > 0 || value.length > 0)
 			{

@@ -1,160 +1,113 @@
 /*
- * This code is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 3 only, as
- * published by the Free Software Foundation.
+  MIT License
 
- * This code is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
- * version 2 for more details (a copy is included in the LICENSE file that
- * accompanied this code).
- */
+  Copyright © 2023 Alex Høffner
 
+  Permission is hereby granted, free of charge, to any person obtaining a copy of this software
+  and associated documentation files (the “Software”), to deal in the Software without
+  restriction, including without limitation the rights to use, copy, modify, merge, publish,
+  distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the
+  Software is furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in all copies or
+  substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING
+  BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+  NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+  DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+  FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+*/
+
+import { Alert } from './Alert.js';
 import { Form } from '../public/Form.js';
 import { Class } from '../types/Class.js';
-import { Logger, Type } from './Logger.js';
 import { Framework } from './Framework.js';
 import { Properties } from './Properties.js';
+import { Components } from './Components.js';
+import { FormBacking } from './FormBacking.js';
 import { dates } from '../model/dates/dates.js';
-import { Hook } from '../control/hooks/Hook.js';
 import { Canvas } from './interfaces/Canvas.js';
+import { Form as ViewForm } from '../view/Form.js';
 import { Form as ModelForm } from '../model/Form.js';
+import { Loading } from '../internal/forms/Loading.js';
+import { Form as InternalForm } from '../internal/Form.js';
 import { EventType } from '../control/events/EventType.js';
-import { HookEvents } from '../control/hooks/HookEvents.js';
+import { TriggerFunction } from '../public/TriggerFunction.js';
+import { EventFilter } from '../control/events/EventFilter.js';
 import { KeyMap, KeyMapping } from '../control/events/KeyMap.js';
 import { ComponentFactory } from './interfaces/ComponentFactory.js';
 import { FormEvent, FormEvents } from '../control/events/FormEvents.js';
-
-export interface Component
-{
-    path:string;
-    class:Class<any>;
-}
-
-function isComponent(object: any) : object is Component
-{
-    return('path' in object && 'class' in object);
-}
-
-export const BaseURL = (url:string) =>
-{
-    function define(_comp_:Class<FormsModule>)
-	{
-		State.baseurl = url;
-	}
-
-	return(define);
-}
-
-export const FormsPathMapping = (components:(Class<any> | Component)[]) =>
-{
-    function define(_comp_:Class<FormsModule>)
-    {
-        components.forEach(element =>
-        {
-            let path:string = null;
-            let clazz:Class<any> = null;
-
-            if (isComponent(element))
-            {
-                clazz = (element as Component).class;
-                path = (element as Component).path.toLowerCase();
-            }
-            else
-            {
-                clazz = element as Class<any>;
-                path = (element as Class<any>).name.toLowerCase();
-            }
-
-            State.components.set(path,clazz);
-			State.classes.set(clazz.name,path);
-
-            Logger.log(Type.classloader,"Loading class: "+clazz.name+" into position: "+path);
-        });
-    }
-
-    return(define);
-}
-
-
-class State
-{
-	static baseurl:string;
-    static root:HTMLElement;
-
-    static classes:Map<string,string> =
-        new Map<string,string>();
-
-    static components:Map<string,Class<any>> =
-        new Map<string,Class<any>>();
-}
+import { ApplicationHandler } from '../control/events/ApplicationHandler.js';
 
 export class FormsModule
 {
-    private static instance:FormsModule;
+	private root$:HTMLElement;
+	private static instance:FormsModule;
 
-    public static get() : FormsModule
-    {
-        if (FormsModule.instance == null)
-            FormsModule.instance = new FormsModule();
-        return(FormsModule.instance);
-    }
+	public static get() : FormsModule
+	{
+		if (FormsModule.instance == null)
+			FormsModule.instance = new FormsModule();
+		return(FormsModule.instance);
+	}
 
-    constructor()
-    {
+	constructor()
+	{
 		dates.validate();
 		KeyMapping.init();
-        FormsModule.instance = this;
-    }
+		ApplicationHandler.init();
+		FormsModule.instance = this;
+	}
 
-    public getRootElement() : HTMLElement
-    {
-        return(State.root);
-    }
+	public getRootElement() : HTMLElement
+	{
+		return(this.root$);
+	}
 
-    public setRootElement(root:HTMLElement) : void
-    {
-        State.root = root;
-    }
+	public setRootElement(root:HTMLElement) : void
+	{
+		this.root$ = root;
+	}
 
-    public mapComponent(clazz:Class<any>, path?:string) : void
-    {
-        if (clazz == null)
+	public mapComponent(clazz:Class<any>, path?:string) : void
+	{
+		if (clazz == null)
 			return;
 
 		if (path == null)
 			path = clazz.name;
 
 		path = path.toLowerCase();
-		State.components.set(path,clazz);
-		State.classes.set(clazz.name,path);
-    }
+		Components.classmap.set(path,clazz);
+		Components.classurl.set(clazz.name,path);
+	}
 
-    public static getFormPath(clazz:Class<any>|string) : string
-    {
+	public static getFormPath(clazz:Class<any>|string) : string
+	{
 		if (clazz == null)
 			return(null);
 
 		if (typeof clazz != "string")
 			clazz = clazz.name;
 
-        return(State.classes.get(clazz.toLowerCase()));
-    }
+		return(Components.classurl.get(clazz.toLowerCase()));
+	}
 
-    public getComponent(path:string) : Class<any>
-    {
-        return(State.components.get(path.toLowerCase()));
-    }
+	public getComponent(path:string) : Class<any>
+	{
+		return(Components.classmap.get(path.toLowerCase()));
+	}
 
-    public parse(doc?:Element) : void
-    {
-        if (doc == null) doc = document.body;
-        let frmwrk:Framework = Framework.parse(this,doc);
+	public parse(doc?:Element) : void
+	{
+		if (doc == null) doc = document.body;
+		let frmwrk:Framework = Framework.parse(this,doc);
 
-        let root:HTMLElement = frmwrk.getRoot();
-        if (State.root == null) State.root = root;
-		if (State.root == null) State.root = document.body;
-    }
+		let root:HTMLElement = frmwrk.getRoot();
+		if (this.root$ == null) this.root$ = root;
+		if (this.root$ == null) this.root$ = document.body;
+	}
 
 	public updateKeyMap(map:Class<KeyMap>) : void
 	{
@@ -180,8 +133,47 @@ export class FormsModule
 		return(false);
 	}
 
-    public async showform(form:Class<Form>|string, container?:HTMLElement) : Promise<Form>
-    {
+	public getCurrentForm() : Form
+	{
+		return(FormBacking.getCurrentForm());
+	}
+
+	public async sendkey(key:KeyMap|string) : Promise<boolean>
+	{
+		if (typeof key === "string") key = KeyMap.from(key);
+		let form:ViewForm = FormBacking.getCurrentViewForm();
+
+		if (form != null) return(form.keyhandler(key));
+		return(ApplicationHandler.instance.keyhandler(key));
+	}
+
+	public async save() : Promise<boolean>
+	{
+		return(FormBacking.save());
+	}
+
+	public async undo() : Promise<boolean>
+	{
+		return(FormBacking.undo());
+	}
+
+	public message(msg:string, title?:string) : void
+	{
+		Alert.message(msg,title);
+	}
+
+	public warning(msg:string, title?:string) : void
+	{
+		Alert.warning(msg,title);
+	}
+
+	public getRunningForms() : Form[]
+	{
+		return(FormBacking.getRunningForms());
+	}
+
+	public async showform(form:Class<Form|InternalForm>|string, parameters?:Map<any,any>, container?:HTMLElement) : Promise<Form>
+	{
 		if (typeof form === "string")
 		{
 			let path:string = form;
@@ -190,28 +182,54 @@ export class FormsModule
 			if (form == null) throw "@Application: No components mapped to path '"+path+"'";
 		}
 
-        if (container == null)
+		if (container == null)
 			container = this.getRootElement();
 
-		if (!(form.prototype instanceof Form))
-            throw "@Application: Component mapped to '"+form+"' is not a form";
+		if (!(form.prototype instanceof Form) && !(form.prototype instanceof InternalForm))
+			throw "@Application: Component mapped to '"+form+"' is not a form";
 
-        let canvasimpl:Class<Canvas> = Properties.CanvasImplementationClass;
-        let factory:ComponentFactory = Properties.FactoryImplementationClass;
+		let factory:ComponentFactory = Properties.FactoryImplementation;
+		let canvasimpl:Class<Canvas> = Properties.CanvasImplementationClass;
 
-        let canvas:Canvas = new canvasimpl();
-        let instance:Form = await factory.createForm(form);
+		let canvas:Canvas = new canvasimpl();
+		let instance:Form = await factory.createForm(form,parameters);
+		await FormEvents.raise(FormEvent.FormEvent(EventType.onNewForm,instance));
 
-        instance.canvas = canvas;
-        canvas.setComponent(instance);
-        container.appendChild(canvas.getElement());
+		instance.canvas = canvas;
+		canvas.setComponent(instance);
+		container.appendChild(canvas.getView());
 
-		let mform:ModelForm = ModelForm.getForm(instance);
+		let mform:ModelForm = FormBacking.getModelForm(instance);
+		await mform.wait4EventTransaction(EventType.PostViewInit,null);
 
-		await mform.initControlBlocks();
-		await mform.waitForEventTransaction(EventType.PostViewInit);
-		await FormEvents.raise(FormEvent.FormEvent(EventType.PostViewInit,instance));
+		if (await FormEvents.raise(FormEvent.FormEvent(EventType.PostViewInit,instance)))
+			instance.focus();
 
 		return(instance);
-    }
+	}
+
+	public hideLoading(thread:number) : void
+	{
+		Loading.hide(thread);
+	}
+
+	public showLoading(message:string) : number
+	{
+		return(Loading.show(message));
+	}
+
+	public removeEventListener(id:object) : void
+	{
+		FormEvents.removeListener(id);
+	}
+
+	public addEventListener(method:TriggerFunction, filter?:EventFilter|EventFilter[]) : object
+	{
+		return(FormEvents.addListener(null,this,method,filter));
+	}
+
+	public addFormEventListener(form:Form|InternalForm, method:TriggerFunction, filter?:EventFilter|EventFilter[]) : object
+	{
+		return(FormEvents.addListener(form,this,method,filter));
+	}
 }
